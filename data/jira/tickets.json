@@ -1,0 +1,377 @@
+[
+  {
+    "key": "ENG-42",
+    "summary": "Pod OOMKilled in production - payment-service",
+    "description": "The payment-service pod has been OOMKilled 4 times in the last 2 hours. Each restart causes a ~30 second disruption to payment processing. Customers are seeing intermittent errors on checkout.\n\nPod: payment-service-7d4f9b-xkp2l\nNamespace: payments\nCurrent memory limit: 512Mi\n\nGrafana shows memory climbing steadily to 512Mi over ~45 minutes before each OOM kill. This suggests either a memory leak or insufficient memory limit for current traffic volume.",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "Critical",
+    "assignee": "alice",
+    "url": "https://acme.atlassian.net/browse/ENG-42",
+    "comments": [
+      {
+        "author": "alice",
+        "body": "Investigating now. Running kubectl describe pod payment-service-7d4f9b-xkp2l -n payments to confirm OOMKilled.",
+        "created_at": "2026-02-01T09:05:00Z"
+      },
+      {
+        "author": "alice",
+        "body": "Confirmed OOMKilled. Last state shows exit code 137. Applying immediate mitigation: increasing memory limit to 1Gi via helm upgrade payment-service --set resources.limits.memory=1Gi --reuse-values. This should stop the crash loop.",
+        "created_at": "2026-02-01T09:15:00Z"
+      },
+      {
+        "author": "bob",
+        "body": "Good call. Also check if the JVM -Xmx setting is too close to the container limit. If -Xmx is set to 512m and the container limit is 512Mi, the JVM heap plus metaspace plus native memory will definitely exceed the limit.",
+        "created_at": "2026-02-01T09:20:00Z"
+      },
+      {
+        "author": "alice",
+        "body": "Found it! The values.yaml has -Xmx512m but the container limit is also 512Mi. The JVM was using off-heap memory on top of heap, pushing total usage above 512Mi. Fixed by setting -Xmx400m (80% of 512Mi) and increasing the container limit to 768Mi to have a buffer. Deployed the fix. Memory is now stable at ~450Mi with no OOM kills in the last 30 minutes. Marking as resolved.",
+        "created_at": "2026-02-01T10:30:00Z"
+      }
+    ],
+    "updated_at": "2026-02-01T10:30:00Z"
+  },
+  {
+    "key": "ENG-55",
+    "summary": "401 errors after API token rotation for order-service",
+    "description": "After rotating the API token for order-service (as part of the quarterly rotation procedure), order-service is receiving 401 Unauthorized errors when calling payment-service. The rotation was completed at 14:00 UTC today. All calls from order-service to payment-service are failing with 401.\n\nError log excerpt:\nHTTP 401 Unauthorized calling POST /api/v1/charges\n{\"error\": \"invalid_token\", \"message\": \"Token signature verification failed\"}\n\nThe new token was written to Vault and a rolling restart of order-service was triggered.",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "High",
+    "assignee": "carol",
+    "url": "https://acme.atlassian.net/browse/ENG-55",
+    "comments": [
+      {
+        "author": "carol",
+        "body": "Checking the token rotation procedure. Was the old token revoked before or after the service picked up the new one?",
+        "created_at": "2026-02-03T14:15:00Z"
+      },
+      {
+        "author": "david",
+        "body": "I think I may have made an error - I revoked the old token right after writing to Vault, before the pods restarted. So there was a window where the old token was revoked but the pods were still using it.",
+        "created_at": "2026-02-03T14:20:00Z"
+      },
+      {
+        "author": "carol",
+        "body": "That explains the 401s during the restart window. But the pods have finished restarting and are still getting 401s. Let me check if the new token is actually being loaded. Running: kubectl exec order-service-xxx -n orders -- env | grep API_TOKEN to verify the new value is present.",
+        "created_at": "2026-02-03T14:25:00Z"
+      },
+      {
+        "author": "carol",
+        "body": "The environment variable is showing the new token value. The issue is likely the JWT public key cache. After signing key rotation, services cache the old public key for up to 15 minutes. The payment-service is rejecting the new token because it can't verify the signature with the cached old key. Waiting 15 minutes for the cache to expire or force-restarting payment-service to clear the cache.",
+        "created_at": "2026-02-03T14:35:00Z"
+      },
+      {
+        "author": "carol",
+        "body": "Force-restarted payment-service: kubectl rollout restart deployment/payment-service -n payments. 401 errors stopped immediately. The public key cache was stale after key rotation. Root cause: revoked old token before service restart (incorrect order) AND public key cache was not cleared after key rotation. Fix: Always restart consuming services BEFORE revoking the old token. For key rotation specifically, also restart all validating services to flush the JWKS cache. Updated the token rotation documentation in ENG-004 to clarify this order.",
+        "created_at": "2026-02-03T15:05:00Z"
+      }
+    ],
+    "updated_at": "2026-02-03T15:05:00Z"
+  },
+  {
+    "key": "ENG-61",
+    "summary": "Database connection pool exhausted - order-service",
+    "description": "order-service is returning 500 errors intermittently. Logs show: QueuePool limit of size 5 overflow 10 reached, connection timed out, timeout 30. This started about 1 hour ago after a traffic spike.\n\nCurrent pod count: 20 replicas of order-service\nPool size per pod: 5\nTotal potential connections: 100\n\nRunning pg_stat_activity on the database shows 487 active connections, approaching the 500 limit.",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "High",
+    "assignee": "eve",
+    "url": "https://acme.atlassian.net/browse/ENG-61",
+    "comments": [
+      {
+        "author": "eve",
+        "body": "Immediate mitigation: Rolling restart of order-service to close leaked connections. kubectl rollout restart deployment/order-service -n orders. Connection count dropping from 487 to 95 after restart.",
+        "created_at": "2026-02-05T16:10:00Z"
+      },
+      {
+        "author": "eve",
+        "body": "Root cause found: A recent PR introduced a code path that opened a transaction but failed to close it under certain error conditions (the finally block was missing). These idle-in-transaction connections were holding pool slots indefinitely. Fix: Added the missing finally block to ensure connections are always returned to the pool. Also added idle_in_transaction_session_timeout=60000 to the connection string as a safety net.",
+        "created_at": "2026-02-05T17:30:00Z"
+      }
+    ],
+    "updated_at": "2026-02-05T17:30:00Z"
+  },
+  {
+    "key": "ENG-68",
+    "summary": "How to add a new service to monitoring?",
+    "description": "I'm building a new service called analytics-service and want to add it to Grafana monitoring and set up PagerDuty alerts. What's the process?\n\nSpecifically I need:\n1. A Grafana dashboard for the service\n2. Alerting on error rate and memory usage\n3. Logs to appear in Grafana Explore",
+    "issue_type": "Question",
+    "status": "Resolved",
+    "priority": "Medium",
+    "assignee": "frank",
+    "url": "https://acme.atlassian.net/browse/ENG-68",
+    "comments": [
+      {
+        "author": "grace",
+        "body": "Here's the process:\n\n1. **Metrics**: Your service needs to expose a /metrics endpoint in Prometheus format. If you're using Python, add the prometheus_client library. For Java/Kotlin, add the micrometer-prometheus dependency. The Prometheus scrape config auto-discovers services with the annotation prometheus.io/scrape: 'true' in the pod spec.\n\n2. **Dashboard**: Copy the template dashboard from infra/monitoring/dashboards/service-template.json and rename it to analytics-service.json. Commit it to the infra repo - Grafana will auto-import it via the provisioning sidecar.\n\n3. **Alerts**: Create infra/monitoring/alerts/analytics-service.yaml following the format in that directory. The standard thresholds are in ENG-010 (Monitoring & Alerting Guide).\n\n4. **Logs**: Add the following to your pod spec to enable log collection: the label app=analytics-service (Promtail uses this to tag logs in Loki). No other config needed - Promtail daemonset already collects stdout/stderr from all pods.",
+        "created_at": "2026-02-08T10:00:00Z"
+      }
+    ],
+    "updated_at": "2026-02-08T10:00:00Z"
+  },
+  {
+    "key": "ENG-73",
+    "summary": "CI pipeline failing on main - test stage exit code 1",
+    "description": "The CI pipeline on the main branch of user-service has been failing since 09:00 UTC today. The test stage is failing with exit code 1. No one merged anything suspicious - the last merge was a dependency update (bumped requests from 2.31 to 2.32).\n\nCI run: https://github.com/acme-org/user-service/actions/runs/12345\n\nFailing test: test_password_reset_email_sent",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "High",
+    "assignee": "henry",
+    "url": "https://acme.atlassian.net/browse/ENG-73",
+    "comments": [
+      {
+        "author": "henry",
+        "body": "Looking at the test failure. The test_password_reset_email_sent test is failing because of a change in the requests library API - the response.json() method behavior changed slightly in 2.32. The mock in the test was using a pattern that no longer works.",
+        "created_at": "2026-02-10T09:30:00Z"
+      },
+      {
+        "author": "henry",
+        "body": "Fixed the test mock. PR #456 up for review. CI passing on the branch. Will merge after approval.",
+        "created_at": "2026-02-10T10:15:00Z"
+      }
+    ],
+    "updated_at": "2026-02-10T10:15:00Z"
+  },
+  {
+    "key": "ENG-79",
+    "summary": "High memory usage in data-pipeline pod - approaching OOM limit",
+    "description": "The data-pipeline CronJob pod is using 92% of its 4Gi memory limit during the nightly ETL run. Grafana alert fired at 03:15 UTC. The pod has not OOMKilled yet but is close. The pipeline job is currently running and processing the analytics dataset for 2026-02-11.",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "Medium",
+    "assignee": "alice",
+    "url": "https://acme.atlassian.net/browse/ENG-79",
+    "comments": [
+      {
+        "author": "alice",
+        "body": "Checking which step of the pipeline is using the most memory. The pipeline has 3 stages: extract, transform, load. Based on timing, it's in the transform stage which does in-memory joins of large DataFrames.",
+        "created_at": "2026-02-12T03:20:00Z"
+      },
+      {
+        "author": "alice",
+        "body": "The data volume grew by 40% this month due to new customers. The transform stage was loading the entire dataset into memory as a single DataFrame. Fixed by switching to chunked processing (process 100k rows at a time instead of all 2M rows at once). Memory usage dropped to 1.8Gi. Also increasing the memory limit to 6Gi as a buffer. Deploying fix.",
+        "created_at": "2026-02-12T09:00:00Z"
+      }
+    ],
+    "updated_at": "2026-02-12T09:00:00Z"
+  },
+  {
+    "key": "ENG-84",
+    "summary": "How do I rollback a deployment that broke production?",
+    "description": "I deployed a new version of inventory-service 20 minutes ago and it's causing 500 errors on all product listing pages. I need to rollback immediately. What are the steps?\n\nService: inventory-service\nNamespace: inventory\nHelm release name: inventory-service",
+    "issue_type": "Question",
+    "status": "Resolved",
+    "priority": "Critical",
+    "assignee": "bob",
+    "url": "https://acme.atlassian.net/browse/ENG-84",
+    "comments": [
+      {
+        "author": "carol",
+        "body": "Rollback steps:\n\n1. Run: helm rollback inventory-service 0 -n inventory\n   (The '0' means rollback to the previous revision)\n\n2. Verify the rollout: kubectl rollout status deployment/inventory-service -n inventory\n\n3. Check pods are healthy: kubectl get pods -n inventory -l app=inventory-service\n\n4. Confirm error rate drops in Grafana\n\nIf you need to see available revisions first: helm history inventory-service -n inventory\n\nYou can also rollback to a specific revision: helm rollback inventory-service <revision-number> -n inventory",
+        "created_at": "2026-02-14T11:05:00Z"
+      },
+      {
+        "author": "bob",
+        "body": "Thanks! helm rollback inventory-service 0 -n inventory worked. Pods are running the previous version, 500 errors have stopped. Service is healthy again. Total downtime was 25 minutes.",
+        "created_at": "2026-02-14T11:20:00Z"
+      }
+    ],
+    "updated_at": "2026-02-14T11:20:00Z"
+  },
+  {
+    "key": "ENG-91",
+    "summary": "Rate limiting not working correctly for enterprise tier customers",
+    "description": "Enterprise tier customer 'AcmeCorp' (API key prefix: ent_acmecorp_) is being rate limited at 1,000 requests/minute instead of their contracted 10,000 requests/minute. They are hitting 429 errors during peak usage.\n\nThe customer contract specifies 10,000 RPM. The configuration in rate-limits.yaml shows the correct value of 10,000 for their key prefix, but the api-gateway is still enforcing the default enterprise limit of 5,000 RPM.",
+    "issue_type": "Bug",
+    "status": "Open",
+    "priority": "High",
+    "assignee": "david",
+    "url": "https://acme.atlassian.net/browse/ENG-91",
+    "comments": [
+      {
+        "author": "david",
+        "body": "Investigating. The config shows 10,000 RPM for ent_acmecorp_ but the effective limit seems lower. Checking if there is a config reload issue - the api-gateway may not have picked up the latest rate-limits.yaml.",
+        "created_at": "2026-02-16T14:00:00Z"
+      },
+      {
+        "author": "david",
+        "body": "Found a potential issue: the api-gateway ConfigMap was updated but the pods weren't restarted. The old config is still in memory. Will test by force-restarting the api-gateway pods. Waiting for approval to restart during business hours as it may briefly affect all customers.",
+        "created_at": "2026-02-16T15:00:00Z"
+      }
+    ],
+    "updated_at": "2026-02-16T15:00:00Z"
+  },
+  {
+    "key": "ENG-96",
+    "summary": "New engineer can't access staging environment - VPN not working",
+    "description": "New engineer Priya (priya@acme.com) joined last week and cannot access the staging environment. She has Tailscale VPN installed and connected but cannot reach staging.acme.internal or any of the staging services. The VPN shows as connected on her laptop.\n\nAccess to GitHub and AWS console works fine. Only staging internal services are unreachable.",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "Medium",
+    "assignee": "frank",
+    "url": "https://acme.atlassian.net/browse/ENG-96",
+    "comments": [
+      {
+        "author": "frank",
+        "body": "This is a common onboarding issue. Priya needs to be added to the 'engineering' Tailscale ACL group which grants access to the staging network. Tailscale ACLs are managed in the IT admin portal. Creating a ticket for IT to add her.",
+        "created_at": "2026-02-18T09:30:00Z"
+      },
+      {
+        "author": "grace",
+        "body": "Added Priya to the engineering ACL group in Tailscale. She should now be able to access staging.acme.internal. Please verify and close this ticket.",
+        "created_at": "2026-02-18T10:00:00Z"
+      },
+      {
+        "author": "frank",
+        "body": "Priya confirmed staging access is working. Closing.",
+        "created_at": "2026-02-18T10:30:00Z"
+      }
+    ],
+    "updated_at": "2026-02-18T10:30:00Z"
+  },
+  {
+    "key": "ENG-103",
+    "summary": "Latency spike between order-service and payment-service",
+    "description": "Starting at 15:00 UTC, p99 latency between order-service and payment-service jumped from 150ms to 3.2 seconds. This is causing checkout page timeouts (30 second timeout configured on the order-service side). Error rate on the /checkout endpoint is 8%.\n\nGrafana shows the latency increase is specifically in payment-service response times, not network latency.",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "High",
+    "assignee": "eve",
+    "url": "https://acme.atlassian.net/browse/ENG-103",
+    "comments": [
+      {
+        "author": "eve",
+        "body": "Checking payment-service internals. The service makes a synchronous call to Stripe for each payment. Checking if Stripe is having issues - looking at https://status.stripe.com",
+        "created_at": "2026-02-20T15:10:00Z"
+      },
+      {
+        "author": "eve",
+        "body": "Stripe status page shows elevated latency on their charges API. This is a Stripe-side incident. Mitigation options: 1) Increase the timeout from order-service to payment-service (not great UX), or 2) Implement a circuit breaker to fail fast and show a 'try again' message instead of waiting 30 seconds.\n\nApplying short-term fix: increased timeout to 60s so fewer requests fail. Opened ticket to implement proper circuit breaker as long-term fix.",
+        "created_at": "2026-02-20T15:30:00Z"
+      },
+      {
+        "author": "eve",
+        "body": "Stripe resolved their incident at 16:45 UTC. Latency back to normal (120ms p99). Reverting the timeout change. Closing this ticket.",
+        "created_at": "2026-02-20T17:00:00Z"
+      }
+    ],
+    "updated_at": "2026-02-20T17:00:00Z"
+  },
+  {
+    "key": "ENG-108",
+    "summary": "How do I silence a Grafana alert temporarily during maintenance?",
+    "description": "I need to do some maintenance on the inventory database (planned index rebuild) that will cause elevated query latency for about 2 hours tonight. I want to silence the latency alerts for inventory-service during that window so the on-call engineer doesn't get paged unnecessarily. How do I do this?",
+    "issue_type": "Question",
+    "status": "Resolved",
+    "priority": "Low",
+    "assignee": "henry",
+    "url": "https://acme.atlassian.net/browse/ENG-108",
+    "comments": [
+      {
+        "author": "grace",
+        "body": "Two options:\n\n**Option 1 (Grafana Silence - recommended for short windows):**\n1. Go to https://grafana.acme.internal\n2. Navigate to Alerting → Silences\n3. Click 'New Silence'\n4. Set matchers: service=inventory-service (or more specific alert labels)\n5. Set start/end time for your maintenance window\n6. Add a comment: 'Planned index rebuild on inventory DB - ENG-108'\n7. Click 'Save'\n\n**Option 2 (PagerDuty Maintenance Window):**\nFor windows longer than 2 hours, create a maintenance window in PagerDuty at https://acme.pagerduty.com to suppress pages during the window.\n\nRemember: Don't silence indefinitely. The 4-hour maximum is a good guideline.",
+        "created_at": "2026-02-22T11:00:00Z"
+      },
+      {
+        "author": "henry",
+        "body": "Perfect, used the Grafana Silence option. Set it for tonight 23:00-01:00 UTC. Thanks!",
+        "created_at": "2026-02-22T11:30:00Z"
+      }
+    ],
+    "updated_at": "2026-02-22T11:30:00Z"
+  },
+  {
+    "key": "ENG-115",
+    "summary": "Deployment to production failing - ImagePullBackOff error",
+    "description": "Trying to deploy user-service version 2.4.1 to production. Pods are stuck in ImagePullBackOff status after the deployment. The image exists in the registry - I can see it at registry.acme.internal/user-service:sha-a1b2c3d4.\n\nkubectl describe pod shows:\nFailed to pull image registry.acme.internal/user-service:sha-a1b2c3d4: rpc error: registry.acme.internal: unauthorized: authentication required",
+    "issue_type": "Bug",
+    "status": "Resolved",
+    "priority": "High",
+    "assignee": "alice",
+    "url": "https://acme.atlassian.net/browse/ENG-115",
+    "comments": [
+      {
+        "author": "alice",
+        "body": "The 'authentication required' error suggests the image pull secret is missing or expired in the production namespace. Check: kubectl get secret registry-credentials -n users",
+        "created_at": "2026-02-24T14:05:00Z"
+      },
+      {
+        "author": "bob",
+        "body": "The registry-credentials secret in the users namespace expired yesterday. The registry uses short-lived credentials (90-day rotation). IT rotated the credentials but forgot to update the Kubernetes secret. Running: kubectl create secret docker-registry registry-credentials --docker-server=registry.acme.internal --docker-username=robot-k8s --docker-password=<new-token> -n users --dry-run=client -o yaml | kubectl apply -f -",
+        "created_at": "2026-02-24T14:20:00Z"
+      },
+      {
+        "author": "alice",
+        "body": "Secret updated. Pods are now pulling the image successfully. Deployment complete. Also updated the secret rotation runbook to include the step for updating Kubernetes imagePullSecrets in all namespaces.",
+        "created_at": "2026-02-24T14:35:00Z"
+      }
+    ],
+    "updated_at": "2026-02-24T14:35:00Z"
+  },
+  {
+    "key": "ENG-122",
+    "summary": "JWT token expiry too short causing users to be logged out unexpectedly",
+    "description": "Multiple customer reports of being logged out mid-session. Users are reporting they get logged out after 15 minutes even when actively using the app. This is causing significant frustration for enterprise customers who use the app throughout their workday.\n\nThe 15-minute token expiry is intentional for security, but combined with a broken refresh flow, users are being logged out instead of seamlessly refreshed.",
+    "issue_type": "Bug",
+    "status": "Open",
+    "priority": "Medium",
+    "assignee": "carol",
+    "url": "https://acme.atlassian.net/browse/ENG-122",
+    "comments": [
+      {
+        "author": "carol",
+        "body": "Investigating the token refresh flow. The frontend should be calling /api/auth/refresh with the refresh token before the access token expires. Checking the frontend logs for refresh failures.",
+        "created_at": "2026-02-26T10:00:00Z"
+      },
+      {
+        "author": "carol",
+        "body": "Found the issue: the frontend is attempting the refresh when the token has already expired (at expiry time) rather than before it expires (e.g., 1 minute before). By the time the refresh request reaches the server, the old access token is invalid and the server rejects the request, returning a 401 and logging the user out. Fix: refresh when token has 2 minutes remaining rather than at expiry. Working on the fix.",
+        "created_at": "2026-02-26T11:30:00Z"
+      }
+    ],
+    "updated_at": "2026-02-26T11:30:00Z"
+  },
+  {
+    "key": "ENG-129",
+    "summary": "How do I view logs for a specific pod in production?",
+    "description": "I need to view logs for a specific pod in the payments namespace to debug an issue. I have kubectl access to production. What is the correct command? Also, how do I view logs from a pod that already crashed and restarted?",
+    "issue_type": "Question",
+    "status": "Resolved",
+    "priority": "Low",
+    "assignee": "david",
+    "url": "https://acme.atlassian.net/browse/ENG-129",
+    "comments": [
+      {
+        "author": "david",
+        "body": "Here are the kubectl commands for viewing pod logs:\n\n**View current logs for a specific pod:**\nkubectl logs <pod-name> -n <namespace>\n\n**Follow logs in real-time (like tail -f):**\nkubectl logs -f <pod-name> -n <namespace>\n\n**View logs from a crashed/restarted pod (previous container instance):**\nkubectl logs <pod-name> -n <namespace> --previous\n\n**Filter by time (e.g., last 30 minutes):**\nkubectl logs <pod-name> -n <namespace> --since=30m\n\n**Get logs across all pods of a deployment at once:**\nkubectl logs -n <namespace> -l app=payment-service --since=1h\n\nFor production, you can also search logs in Grafana Explore using Loki queries if you need to search across a longer time range or use regex filters.",
+        "created_at": "2026-02-28T09:00:00Z"
+      }
+    ],
+    "updated_at": "2026-02-28T09:00:00Z"
+  },
+  {
+    "key": "ENG-135",
+    "summary": "Memory leak in recommendation-service - memory grows unbounded",
+    "description": "The recommendation-service memory usage grows continuously over time and never stabilizes. The service starts at ~1.2Gi after loading the ML model, but grows by ~100Mi per hour of traffic. After 24 hours it hits the 4Gi limit and OOMKills.\n\nThis started after the v3.2.0 release which included an update to the recommendation model. The previous version was stable.\n\nCurrent workaround: restarting the pod daily via a CronJob (hack, not a fix).",
+    "issue_type": "Bug",
+    "status": "In Progress",
+    "priority": "High",
+    "assignee": "eve",
+    "url": "https://acme.atlassian.net/browse/ENG-135",
+    "comments": [
+      {
+        "author": "eve",
+        "body": "Starting memory profiling with tracemalloc to identify the leak source. Added PYTHONTRACEMALLOC=1 env var to the pod and capturing snapshots every 30 minutes.",
+        "created_at": "2026-03-01T10:00:00Z"
+      },
+      {
+        "author": "eve",
+        "body": "Preliminary results from tracemalloc show the growth is in numpy arrays being cached in a dictionary. The model's feature cache is accumulating entries but never evicting old ones. The cache was added in v3.2.0 without a size limit or TTL. Working on adding an LRU cache with a max size of 10,000 entries.",
+        "created_at": "2026-03-03T14:00:00Z"
+      }
+    ],
+    "updated_at": "2026-03-03T14:00:00Z"
+  }
+]

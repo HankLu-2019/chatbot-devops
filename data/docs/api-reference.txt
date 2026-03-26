@@ -1,0 +1,263 @@
+API REFERENCE: Acme Internal APIs
+===================================
+Acme Engineering - Internal Documentation
+Last Updated: 2026-02-20
+Version: v1 (stable)
+
+Base URLs
+---------
+Production:  https://api.acme.com/v1
+Staging:     https://api-staging.acme.internal/v1
+Local dev:   http://localhost:8080/v1
+
+All endpoints require authentication via Bearer token in the Authorization header:
+  Authorization: Bearer <jwt-token>
+
+Tokens are obtained from the auth service. See the API Authentication Setup guide (ENG-004) for how to obtain and manage tokens.
+
+---------------------------------------------------------------------------
+AUTHENTICATION ENDPOINTS
+---------------------------------------------------------------------------
+
+POST /auth/login
+  Authenticate a user and obtain access + refresh tokens.
+
+  Request body:
+    {
+      "email": "user@acme.com",
+      "password": "..."
+    }
+
+  Response 200:
+    {
+      "access_token": "<jwt>",
+      "refresh_token": "<jwt>",
+      "token_type": "Bearer",
+      "expires_in": 900
+    }
+
+  Errors:
+    401 - Invalid credentials
+    429 - Too many login attempts (rate limited, retry after 60s)
+
+POST /auth/refresh
+  Refresh an expired access token using a valid refresh token.
+
+  Request body:
+    {
+      "refresh_token": "<refresh-jwt>"
+    }
+
+  Response 200:
+    {
+      "access_token": "<new-jwt>",
+      "token_type": "Bearer",
+      "expires_in": 900
+    }
+
+  Errors:
+    401 - Refresh token invalid or expired (user must re-login)
+
+  Note: Call this endpoint when access_token has 2 minutes or less remaining
+  (check the 'exp' claim). Do not wait until the token has expired.
+
+POST /auth/logout
+  Revoke the current session's tokens.
+
+  Response 204: No content (success)
+
+---------------------------------------------------------------------------
+USER ENDPOINTS
+---------------------------------------------------------------------------
+
+GET /users/me
+  Get the authenticated user's profile.
+
+  Response 200:
+    {
+      "id": "usr_abc123",
+      "email": "user@acme.com",
+      "name": "Alice Smith",
+      "org_id": "org_xyz789",
+      "role": "member",
+      "created_at": "2025-06-01T00:00:00Z"
+    }
+
+PATCH /users/me
+  Update the authenticated user's profile.
+
+  Request body (all fields optional):
+    {
+      "name": "Alice Smith",
+      "notification_preferences": {
+        "email": true,
+        "sms": false
+      }
+    }
+
+  Response 200: Updated user object
+
+GET /users/{user_id}
+  Get a user by ID. Requires 'admin' role.
+
+  Response 200: User object
+  Errors:
+    403 - Insufficient permissions
+    404 - User not found
+
+---------------------------------------------------------------------------
+ORDER ENDPOINTS
+---------------------------------------------------------------------------
+
+POST /orders
+  Create a new order.
+
+  Request body:
+    {
+      "items": [
+        {
+          "product_id": "prod_abc123",
+          "quantity": 2
+        }
+      ],
+      "shipping_address": {
+        "line1": "123 Main St",
+        "city": "San Francisco",
+        "state": "CA",
+        "postal_code": "94105",
+        "country": "US"
+      },
+      "payment_method_id": "pm_stripe_abc123"
+    }
+
+  Response 201:
+    {
+      "order_id": "ord_abc123",
+      "status": "pending",
+      "total_amount": 4999,
+      "currency": "usd",
+      "created_at": "2026-02-20T10:00:00Z"
+    }
+
+  Errors:
+    400 - Invalid request (check items, address)
+    402 - Payment failed (see payment_error field)
+    409 - Insufficient inventory
+
+GET /orders/{order_id}
+  Get order status and details.
+
+  Response 200:
+    {
+      "order_id": "ord_abc123",
+      "status": "fulfilled",
+      "items": [...],
+      "shipping_tracking": "1Z999AA10123456784",
+      "created_at": "...",
+      "updated_at": "..."
+    }
+
+  Order status values: pending, payment_processing, confirmed, fulfilling, fulfilled, cancelled, refunded
+
+POST /orders/{order_id}/cancel
+  Cancel an order. Only possible when status is 'pending' or 'confirmed'.
+
+  Response 200: Updated order object with status 'cancelled'
+  Errors:
+    409 - Order cannot be cancelled in current status
+
+---------------------------------------------------------------------------
+PAYMENT ENDPOINTS
+---------------------------------------------------------------------------
+
+POST /payments/methods
+  Add a payment method (card) to the account.
+
+  Request body:
+    {
+      "stripe_payment_method_id": "pm_..."
+    }
+
+  Note: Never send raw card data to Acme APIs. Use Stripe.js to tokenize cards
+  on the frontend and send the resulting Stripe PaymentMethod ID.
+
+GET /payments/methods
+  List saved payment methods for the authenticated user.
+
+DELETE /payments/methods/{method_id}
+  Remove a saved payment method.
+
+---------------------------------------------------------------------------
+RATE LIMITING
+---------------------------------------------------------------------------
+
+All endpoints are subject to rate limiting. Limits vary by customer tier:
+  Free:         60 req/min
+  Starter:      300 req/min
+  Professional: 1,000 req/min
+  Enterprise:   5,000 req/min (configurable per contract)
+
+Rate limit information is returned in response headers:
+  X-RateLimit-Limit:     Total requests allowed in window
+  X-RateLimit-Remaining: Requests remaining in current window
+  X-RateLimit-Reset:     Unix timestamp when window resets
+
+When rate limited, you receive:
+  HTTP 429 Too Many Requests
+  Retry-After: <seconds>
+
+Implement exponential backoff when encountering 429 responses. Example:
+  delay = min(initial_delay * 2^attempt + random_jitter, 60)
+
+---------------------------------------------------------------------------
+ERROR RESPONSE FORMAT
+---------------------------------------------------------------------------
+
+All error responses use a consistent format:
+  {
+    "error": "error_code",
+    "message": "Human-readable description",
+    "details": {}  // Optional additional context
+  }
+
+Common error codes:
+  unauthorized     - Missing or invalid authentication token
+  forbidden        - Valid token but insufficient permissions
+  not_found        - Requested resource does not exist
+  validation_error - Request body failed validation
+  rate_limited     - Too many requests
+  internal_error   - Server error (report to #platform-eng if persistent)
+
+---------------------------------------------------------------------------
+PAGINATION
+---------------------------------------------------------------------------
+
+List endpoints return paginated results using cursor-based pagination:
+  GET /orders?limit=20&cursor=<cursor_token>
+
+Response includes:
+  {
+    "items": [...],
+    "next_cursor": "cursor_token_for_next_page",
+    "has_more": true
+  }
+
+When has_more is false, you have retrieved all results.
+Maximum page size: 100 items per request.
+
+---------------------------------------------------------------------------
+WEBHOOKS
+---------------------------------------------------------------------------
+
+Acme sends webhook events for important state changes. Configure your webhook
+endpoint in the dashboard at https://app.acme.com/settings/webhooks.
+
+Available event types:
+  order.created
+  order.fulfilled
+  order.cancelled
+  payment.succeeded
+  payment.failed
+
+Webhook payloads are signed using HMAC-SHA256. Verify the X-Acme-Signature
+header using your webhook secret to ensure authenticity.

@@ -1,0 +1,211 @@
+INFRASTRUCTURE OVERVIEW
+=======================
+Acme Engineering - Internal Architecture Document
+Last Updated: 2026-02-10
+Owner: Platform Engineering Team (platform-eng@acme.com)
+
+Executive Summary
+-----------------
+Acme's infrastructure runs on AWS in the us-east-1 region (primary) with us-west-2 as a disaster recovery region. All workloads run on Kubernetes (EKS). Infrastructure is managed as code using Terraform (in the infra/ repository). Changes to production infrastructure require a PR with approval from two platform engineers.
+
+Cloud Provider and Accounts
+-----------------------------
+AWS Organization structure:
+- acme-root (management account)
+- acme-prod (production workloads)
+- acme-staging (staging workloads)
+- acme-dev (developer access, non-production experimentation)
+- acme-security (security tooling: GuardDuty, Security Hub, CloudTrail)
+- acme-logging (centralized log storage, separate for compliance)
+
+All access is via AWS SSO using Okta as the identity provider. Log in at:
+https://acme.awsapps.com/start
+
+Kubernetes (EKS) Clusters
+--------------------------
+Production cluster:
+- Name: acme-prod
+- Region: us-east-1
+- Node groups:
+  - general: m6i.2xlarge (8 vCPU, 32GB RAM), 5-20 nodes (auto-scaling)
+  - high-memory: r6i.2xlarge (8 vCPU, 64GB RAM), 2-5 nodes (for recommendation-service)
+  - spot: m6i.xlarge spot instances, 0-10 nodes (for batch workloads)
+- Kubernetes version: 1.29
+- Add-ons: AWS Load Balancer Controller, Cluster Autoscaler, EBS CSI Driver, VPC CNI
+
+Staging cluster:
+- Name: acme-staging
+- Region: us-east-1
+- Node groups: general only (m6i.xlarge, 2-8 nodes)
+- Kubernetes version: 1.29 (updated ahead of production)
+
+Namespaces (production):
+- gateway: API gateway
+- users: User service
+- payments: Payment service (restricted, PCI scope)
+- orders: Order service
+- inventory: Inventory service
+- notifications: Notification service
+- recommendations: Recommendation service
+- platform: Shared platform services (ArgoCD, monitoring, ingress)
+- cert-manager: TLS certificate management
+
+Accessing Clusters
+------------------
+1. Ensure Tailscale VPN is connected
+2. Run: aws eks update-kubeconfig --name acme-prod --region us-east-1
+   (requires aws-cli configured with your SSO profile)
+3. Verify: kubectl config current-context
+   Should show: arn:aws:eks:us-east-1:<account-id>:cluster/acme-prod
+
+For staging: aws eks update-kubeconfig --name acme-staging --region us-east-1
+
+Networking
+----------
+VPC CIDR: 10.0.0.0/16 (production), 10.1.0.0/16 (staging)
+
+Subnets:
+- Private subnets (app tier): 10.0.1.0/24, 10.0.2.0/24, 10.0.3.0/24
+- Private subnets (data tier): 10.0.11.0/24, 10.0.12.0/24, 10.0.13.0/24
+- Public subnets (load balancers): 10.0.21.0/24, 10.0.22.0/24, 10.0.23.0/24
+
+All pod-to-pod communication is encrypted via mTLS (Istio service mesh).
+External traffic terminates TLS at the AWS Application Load Balancer.
+Internal service-to-service traffic uses Kubernetes DNS for discovery.
+
+Network policies enforce default-deny for all pod communication.
+Only explicitly whitelisted service-to-service paths are allowed.
+Policy definitions: infra/k8s/network-policies/
+
+Databases (RDS PostgreSQL)
+--------------------------
+Production RDS instances:
+- acme-prod-primary: db.r6g.2xlarge, PostgreSQL 15.4, Multi-AZ enabled
+  Endpoint: acme-prod-primary.cluster-xxx.us-east-1.rds.amazonaws.com:5432
+  Max connections: 500
+  Storage: 2TB gp3, auto-scaling enabled up to 10TB
+
+- acme-prod-replica: db.r6g.xlarge, read replica
+  Endpoint: acme-prod-replica.cluster-xxx.us-east-1.rds.amazonaws.com:5432
+  Lag: typically < 10 seconds during normal operations
+
+Backups:
+- Automated daily snapshots, retained for 30 days
+- Point-in-time recovery enabled
+- Cross-region backup replication to us-west-2 every 6 hours
+- Backup verification tested monthly
+
+Database Schemas (one schema per service, shared RDS instance):
+- public.users_* (user-service)
+- public.orders_* (order-service)
+- public.payments_* (payment-service)
+- public.inventory_* (inventory-service)
+
+Cache (ElastiCache Redis)
+--------------------------
+Production Redis cluster:
+- Name: acme-prod-redis
+- Type: Cluster mode enabled, 3 shards × 1 replica
+- Instance: cache.r6g.large per node
+- Endpoint: acme-prod-redis.xxx.clustercfg.use1.cache.amazonaws.com:6379
+- Max memory policy: allkeys-lru
+- Total cache size: ~12GB
+
+Used by:
+- user-service: session storage (key prefix: session:)
+- api-gateway: rate limit counters (key prefix: rate-limit:)
+- recommendation-service: recommendation cache (key prefix: rec:)
+
+Message Queue (MSK Kafka)
+--------------------------
+Production Kafka cluster:
+- Name: acme-prod-kafka
+- Brokers: 3 × kafka.m5.large
+- Kafka version: 3.5
+- Endpoints: broker-1.xxx.us-east-1.amazonaws.com:9092 (internal only)
+
+Topics:
+- order.events: Published by order-service, consumed by notification-service and data-pipeline
+- payment.events: Published by payment-service (audit log)
+- user.events: Published by user-service (signup, deletion for GDPR)
+
+Retention: 7 days by default, 30 days for payment.events (compliance)
+
+Storage (S3)
+------------
+Key buckets:
+- acme-prod-assets: Static assets, served via CloudFront
+- acme-prod-ml-models: ML model artifacts for recommendation-service
+- acme-prod-data-pipeline: ETL outputs, Athena query results
+- acme-prod-logs: Centralized application logs (90-day retention)
+- acme-prod-backups: Additional backup storage
+
+CDN (CloudFront)
+----------------
+Static assets are served from CloudFront distribution:
+- Production: https://d1abc123.cloudfront.net (CNAME: assets.acme.com)
+- Cache TTL: 1 year for content-hashed assets, 5 minutes for dynamic content
+
+DNS
+---
+Route53 manages DNS. Primary zones:
+- acme.com: Public-facing customer endpoints
+- acme.internal: Internal services (split-horizon DNS via VPN)
+
+Internal endpoints (accessible via VPN):
+- argocd.acme.internal
+- grafana.acme.internal
+- prometheus.acme.internal
+- vault.acme.internal
+- registry.acme.internal
+
+Secrets Management (HashiCorp Vault)
+-------------------------------------
+Vault is used for all secrets management. Access is role-based.
+
+Vault endpoint: https://vault.acme.internal
+Authentication: OIDC via Okta (use 'vault login -method=oidc' from CLI)
+
+Secret paths:
+- secret/prod/<service-name>/database: DB credentials
+- secret/prod/<service-name>/api-keys: Third-party API keys
+- secret/prod/shared/stripe: Stripe API keys
+- secret/prod/shared/twilio: Twilio credentials
+
+Kubernetes pods access Vault via the Vault Agent Injector sidecar, which injects secrets as environment variables at pod startup. Secret rotation requires a rolling restart of the consuming pod.
+
+Monitoring Stack
+----------------
+Prometheus: Metrics collection from all pods (scrape interval: 30s)
+Grafana: Visualization at https://grafana.acme.internal
+Loki: Log aggregation (via Promtail daemonset on all nodes)
+Alertmanager: Routes alerts to PagerDuty (critical) and Slack (warnings)
+PagerDuty: On-call alerting
+
+Grafana admin: Access with Okta SSO
+Default dashboard: "Platform Overview" (start here during incidents)
+
+CI/CD Infrastructure
+--------------------
+GitHub Actions: CI pipeline for all services
+ArgoCD: GitOps-based continuous deployment to Kubernetes
+  - Dashboard: https://argocd.acme.internal
+  - Syncs from: github.com/acme-org/infra (GitOps repo)
+  - Sync interval: 3 minutes
+  - Auto-sync enabled for staging, manual approval required for production
+
+Docker Registry: registry.acme.internal (Harbor)
+  - Vulnerability scanning: Trivy (integrated with CI)
+  - Image retention: 90 days for non-production tags, permanent for production-tagged images
+
+Security Controls
+-----------------
+- All data encrypted at rest (AES-256 via AWS KMS)
+- All data encrypted in transit (TLS 1.2+ enforced)
+- mTLS between all pod-to-pod communication (Istio)
+- Pod Security Standards: 'restricted' profile for all namespaces
+- Secrets: Never stored in Git, always via Vault
+- Access: Principle of least privilege, quarterly access reviews
+- Vulnerability scanning: Trivy in CI, Inspector for EC2/container images
+- Audit logging: All AWS API calls via CloudTrail, 7-year retention
+- PCI-DSS: payment-service namespace is in scope, annual QSA audit

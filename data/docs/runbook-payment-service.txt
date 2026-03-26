@@ -1,0 +1,138 @@
+RUNBOOK: Payment Service
+========================
+Acme Engineering - Internal Operations Document
+Last Updated: 2026-02-15
+Owner: Payments Team (payments-team@acme.com)
+On-Call: See PagerDuty schedule "Payments On-Call"
+
+Overview
+--------
+The payment-service is a critical microservice responsible for processing all financial transactions at Acme. It integrates with Stripe for card processing and handles payment authorization, capture, and refunds. Given its critical nature, the payment-service has stricter SLAs and operational procedures than other services.
+
+- Namespace: payments
+- Helm release: payment-service
+- Docker image: registry.acme.internal/payment-service:<sha>
+- Port: 8082
+- Health endpoint: /healthz
+- Metrics endpoint: /metrics
+- PagerDuty service: "Payment Service" (ID: PABC123)
+
+Architecture
+------------
+The payment-service is a Python FastAPI application with the following components:
+- FastAPI web layer handling REST API requests
+- Stripe SDK for payment processing
+- PostgreSQL connection pool (max 10 connections per pod, 3 replicas = 30 connections)
+- Redis cache for idempotency keys (prevents duplicate charges)
+- Background task queue (Celery + Redis) for async operations like refund processing
+
+The service runs with 3 replicas in production for high availability. A minimum of 2 replicas must be running at all times. The Kubernetes PodDisruptionBudget enforces this.
+
+Resource Limits
+---------------
+Current resource configuration (as of v2.3.0):
+- CPU request: 250m, CPU limit: 1000m
+- Memory request: 512Mi, Memory limit: 768Mi
+- JVM: N/A (Python service)
+- Gunicorn workers: 4 per pod
+
+Note: Memory limit was increased from 512Mi to 768Mi in February 2026 after OOM incidents (see ENG-42). The -Xmx equivalent for Python is worker count × model memory. If OOM events recur, first check if a memory leak has been introduced before increasing limits.
+
+Deployment Procedure
+--------------------
+1. Ensure CI is passing on the target commit
+2. Notify #payments-team and #deployments Slack channels before deploying
+3. Deploy to staging first:
+   helm upgrade --install payment-service ./infra/helm/payment-service \
+     --namespace payments \
+     --set image.tag=<git-sha> \
+     --values ./infra/helm/payment-service/values-staging.yaml \
+     --wait --timeout 5m
+
+4. Verify staging is healthy:
+   kubectl rollout status deployment/payment-service -n payments
+   kubectl get pods -n payments -l app=payment-service
+
+5. Run smoke tests against staging:
+   ./scripts/smoke-test-payments.sh staging
+
+6. If staging is healthy after 30 minutes, deploy to production:
+   helm upgrade --install payment-service ./infra/helm/payment-service \
+     --namespace payments \
+     --set image.tag=<git-sha> \
+     --values ./infra/helm/payment-service/values-prod.yaml \
+     --wait --timeout 5m
+
+7. Monitor the Grafana "Payment Service" dashboard for 15 minutes post-deploy
+8. Confirm with #deployments channel that deploy is complete and healthy
+
+Rollback Procedure
+------------------
+If the deployment causes issues, roll back immediately:
+
+1. Run: helm rollback payment-service 0 -n payments
+2. Verify: kubectl rollout status deployment/payment-service -n payments
+3. Check pod health: kubectl get pods -n payments -l app=payment-service
+4. Confirm error rate returns to baseline in Grafana (target: < 0.1%)
+5. Post in #incidents: "Rolled back payment-service to previous version. Investigating root cause."
+6. Create Jira ticket for root cause investigation
+
+To view rollback history: helm history payment-service -n payments
+
+Common Incidents and Runbooks
+------------------------------
+
+INCIDENT: Pod OOMKilled
+Symptoms: Pod status OOMKilled, exit code 137, increasing restarts
+Steps:
+1. kubectl describe pod <pod-name> -n payments - confirm OOMKilled
+2. Immediate mitigation: helm upgrade payment-service --set resources.limits.memory=1536Mi --reuse-values -n payments
+3. Check Grafana memory panel for growth pattern (steady = load increase, unbounded = leak)
+4. If leak suspected: check for unbounded caches, check for Redis connection leaks
+5. After stabilization, profile with py-spy or memory_profiler to find root cause
+6. Set proper limit with 20% buffer above observed peak
+
+INCIDENT: High Error Rate (> 1%)
+Symptoms: 5xx errors on /api/v1/charges, alerts in PagerDuty
+Steps:
+1. Check payment-service logs: kubectl logs -n payments -l app=payment-service --since=10m
+2. Check Stripe status: https://status.stripe.com
+3. If Stripe issue: implement circuit breaker response (return 503 with Retry-After header)
+4. If not Stripe: check database connectivity and Redis connectivity
+5. Check for recent deployments: helm history payment-service -n payments
+6. If recent deploy is suspect: helm rollback payment-service 0 -n payments
+
+INCIDENT: Database Connection Errors
+Symptoms: QueuePool limit reached errors, 500s on database-dependent endpoints
+Steps:
+1. Check connections: psql -h <db-host> -c "SELECT count(*), state FROM pg_stat_activity WHERE application_name LIKE '%payment%' GROUP BY state;"
+2. If connections are high: kubectl rollout restart deployment/payment-service -n payments
+3. Check for long-running transactions: SELECT pid, now() - pg_stat_activity.query_start AS duration, query FROM pg_stat_activity WHERE state = 'active' ORDER BY duration DESC;
+4. Kill blocking queries if needed: SELECT pg_terminate_backend(<pid>);
+
+INCIDENT: Redis Connection Errors
+Symptoms: "Redis connection refused" or "max clients reached" in logs
+Steps:
+1. Check Redis health: kubectl exec -n payments -it <payment-pod> -- redis-cli -h redis.payments.svc.cluster.local PING
+2. Check Redis client count: redis-cli INFO clients
+3. If Redis is unreachable: payment idempotency checks will fail-open (log warning, proceed with payment)
+4. Page platform team if Redis cluster is down
+
+Monitoring and Alerts
+---------------------
+Key Grafana panels for payment-service (dashboard: "Payment Service"):
+- Request Rate: target 50-200 RPS
+- Error Rate: alert threshold 1% (critical at 5%)
+- p99 Latency: alert threshold 2s (critical at 5s)
+- Stripe API Latency: normal 100-300ms
+- Memory Usage: alert at 85% of limit
+- Active DB Connections: alert at 25 (of 30 max)
+
+PagerDuty integration: payment-service sends alerts via the "Payment Service" PagerDuty service. Escalation policy: "Payments Critical" which pages the payments on-call, then the engineering manager after 15 minutes if unacknowledged.
+
+Security Notes
+--------------
+- Never log payment card data (PAN, CVV, expiry). The Stripe SDK handles tokenization.
+- Payment-service operates in the "payments" namespace with strict network policies. Only api-gateway and order-service may call it (enforced by NetworkPolicy).
+- PCI-DSS scope: payment-service is in scope. Any changes to this service require review from the security team before deployment.
+- All payment-service logs are shipped to a separate, audited log bucket in S3 for PCI compliance.
