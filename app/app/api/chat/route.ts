@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import pool from "@/lib/db";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const EMBED_MODEL = "gemini-embedding-001";
-const EMBED_DIM = 768;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
+const EMBED_MODEL = "text-embedding-3-small";
+const EMBED_DIM = 1536;
+const CHAT_MODEL = "gpt-4o-mini";
 const RERANKER_URL = process.env.RERANKER_URL || "http://localhost:8000";
 const RERANK_THRESHOLD = 0.3;
 
-const genai = new GoogleGenerativeAI(GEMINI_API_KEY);
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,35 +73,26 @@ Last user message: ${message}
 
 Standalone search query:`;
 
-  const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const result = await model.generateContent(prompt);
-  const rewritten = result.response.text().trim();
+  const response = await openai.chat.completions.create({
+    model: CHAT_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0,
+  });
+  const rewritten = response.choices[0].message.content?.trim();
   return rewritten || message;
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — Embed query via Gemini REST API
+// Step 2 — Embed query via OpenAI
 // ---------------------------------------------------------------------------
 async function embedQuery(text: string): Promise<number[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${GEMINI_API_KEY}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: `models/${EMBED_MODEL}`,
-      content: { parts: [{ text }] },
-      outputDimensionality: EMBED_DIM,
-    }),
+  const response = await openai.embeddings.create({
+    model: EMBED_MODEL,
+    input: text,
+    dimensions: EMBED_DIM,
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini embed API error: ${response.status} ${err}`);
-  }
-
-  const data = await response.json();
-  const embedding: number[] = data?.embedding?.values;
+  const embedding = response.data[0].embedding;
 
   if (!embedding || embedding.length !== EMBED_DIM) {
     throw new Error(
@@ -221,7 +213,7 @@ function filterByThreshold(
 }
 
 // ---------------------------------------------------------------------------
-// Step 6 — Generate answer with Gemini
+// Step 6 — Generate answer with OpenAI
 // ---------------------------------------------------------------------------
 async function generateAnswer(
   query: string,
@@ -242,20 +234,21 @@ If you cannot answer from the context, say so clearly.
 Context:
 ${contextText}`;
 
-  const model = genai.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: systemPrompt,
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    ...(history ?? []).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    })),
+    { role: "user", content: query },
+  ];
+
+  const response = await openai.chat.completions.create({
+    model: CHAT_MODEL,
+    messages,
   });
 
-  // Build chat history for multi-turn context
-  const historyForGemini = (history ?? []).map((m) => ({
-    role: m.role === "user" ? "user" : "model",
-    parts: [{ text: m.content }],
-  }));
-
-  const chat = model.startChat({ history: historyForGemini });
-  const result = await chat.sendMessage(query);
-  return result.response.text();
+  return response.choices[0].message.content ?? "";
 }
 
 // ---------------------------------------------------------------------------
