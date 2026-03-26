@@ -3,7 +3,7 @@
 A production-quality Retrieval-Augmented Generation chatbot for Acme Engineering's internal knowledge base.
 
 - **Storage & Search**: ParadeDB (PostgreSQL + pgvector + pg_search)
-- **Embeddings & Generation**: Google Gemini (`text-embedding-004` + `gemini-2.0-flash`)
+- **Embeddings & Generation**: Google Gemini (`gemini-embedding-001` + `gemini-2.5-flash`)
 - **Retrieval**: Hybrid BM25 + vector search with Reciprocal Rank Fusion (RRF)
 - **Reranking**: Cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
 - **Frontend**: Next.js 15 + Tailwind CSS
@@ -43,7 +43,7 @@ python ingest.py
 This will:
 1. Load Confluence pages, Jira tickets, and plain-text docs from `data/`
 2. Chunk them with structure-aware splitting
-3. Embed each chunk with Gemini `text-embedding-004` (768 dims)
+3. Embed each chunk with Gemini `gemini-embedding-001` (768 dims via `output_dimensionality`)
 4. Insert into ParadeDB, skipping any chunks already present (idempotent)
 
 Re-running `ingest.py` is safe — existing chunks are detected by content hash and skipped.
@@ -81,8 +81,8 @@ Browser
   └─► Next.js App (port 3000)
         │
         ├─► POST /api/chat
-        │     1. Rewrite query (Gemini Flash)
-        │     2. Embed query (Gemini text-embedding-004)
+        │     1. Rewrite query (gemini-2.5-flash)
+        │     2. Embed query (gemini-embedding-001, 768 dims)
         │     3. Hybrid search: BM25 (pg_search) + vector (pgvector) with RRF
         │     4. Rerank top-30 → top-6 (cross-encoder sidecar)
         │     5. Score threshold filter (< 0.3 → "I don't have info")
