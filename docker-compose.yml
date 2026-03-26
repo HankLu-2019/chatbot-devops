@@ -19,5 +19,45 @@ services:
       timeout: 5s
       retries: 5
 
+  reranker:
+    build: ./reranker
+    container_name: reranker
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  app:
+    build: ./app
+    container_name: app
+    ports:
+      - "3000:3000"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: postgresql://postgres:postgres@paradedb:5432/ragdb
+      RERANKER_URL: http://reranker:8000
+    depends_on:
+      paradedb:
+        condition: service_healthy
+      reranker:
+        condition: service_healthy
+
+  ingestion:
+    build: ./ingestion
+    container_name: ingestion
+    profiles: ["ingest"]
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: postgresql://postgres:postgres@paradedb:5432/ragdb
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      paradedb:
+        condition: service_healthy
+
 volumes:
   paradedb_data:

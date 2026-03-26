@@ -11,67 +11,58 @@ A production-quality Retrieval-Augmented Generation chatbot for Acme Engineering
 ## Prerequisites
 
 - Docker & Docker Compose
-- Python 3.11+
-- Node.js 20+
-- A `GEMINI_API_KEY` in `.env` (already present)
+- A `GEMINI_API_KEY` (that's it — no local Python or Node required)
 
 ## Quick Start
 
-### 1. Start ParadeDB
+### 1. Set your API key
+
+```bash
+cp .env.example .env
+# then edit .env and add your GEMINI_API_KEY
+```
+
+### 2. Start all services
 
 ```bash
 docker compose up -d
 ```
 
-Wait for the health check to pass:
+This starts ParadeDB, the reranker, and the Next.js app. Wait for everything to be healthy:
 
 ```bash
-docker compose ps   # status should be "healthy"
+docker compose ps   # all services should show "healthy" or "running"
 ```
 
-The `schema.sql` is auto-applied on first start. It creates the `documents` table, HNSW vector index, and BM25 full-text index.
+The `schema.sql` is auto-applied on first start (documents table + HNSW + BM25 indexes).
 
-### 2. Ingest data
+### 3. Ingest data
 
 ```bash
-cd ingestion
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python ingest.py
+docker compose --profile ingest run --rm ingestion
 ```
 
 This will:
 1. Load Confluence pages, Jira tickets, and plain-text docs from `data/`
 2. Chunk them with structure-aware splitting
-3. Embed each chunk with Gemini `gemini-embedding-001` (768 dims via `output_dimensionality`)
-4. Insert into ParadeDB, skipping any chunks already present (idempotent)
+3. Embed each chunk with Gemini `gemini-embedding-001` (768 dims)
+4. Insert into ParadeDB, skipping chunks already present (idempotent)
 
-Re-running `ingest.py` is safe — existing chunks are detected by content hash and skipped.
+Re-running is safe — existing chunks are detected by content hash and skipped.
 
-### 3. Start the reranker sidecar
+### 4. Open the app
 
-In a separate terminal:
+[http://localhost:3000](http://localhost:3000)
 
-```bash
-cd reranker
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
+---
 
-The reranker loads `cross-encoder/ms-marco-MiniLM-L-6-v2` on startup (~50MB, ~5s).
-
-Health check: `curl http://localhost:8000/health`
-
-### 4. Start the Next.js app
+**Local dev** (optional, if you want hot-reload for the frontend):
 
 ```bash
-cd app
-npm install
-npm run dev
+cd app && npm install && npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Set `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ragdb` and `RERANKER_URL=http://localhost:8000` in `app/.env.local`.
 
 ## Architecture
 
