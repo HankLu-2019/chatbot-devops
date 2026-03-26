@@ -28,79 +28,96 @@ function generateId(): string {
 
 const NO_INFO_ANSWER = "I don't have information about this.";
 
-function sourceTypeLabel(type: string): string {
+function sourcePrefix(type: string): string {
   switch (type) {
-    case "confluence":
-      return "Confluence";
-    case "jira":
-      return "Jira";
-    case "doc":
-      return "Doc";
-    default:
-      return type;
-  }
-}
-
-function sourceTypeBadgeColor(type: string): string {
-  switch (type) {
-    case "confluence":
-      return "bg-blue-100 text-blue-700";
-    case "jira":
-      return "bg-purple-100 text-purple-700";
-    case "doc":
-      return "bg-green-100 text-green-700";
-    default:
-      return "bg-gray-100 text-gray-600";
+    case "confluence": return "cf";
+    case "jira":       return "jr";
+    case "doc":        return "doc";
+    default:           return type.slice(0, 3);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Components
+// Sub-components
 // ---------------------------------------------------------------------------
 
-function UserBubble({ content }: { content: string }) {
+function UserLine({ content }: { content: string }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[75%] bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed shadow-sm">
-        {content}
+    <div className="msg-enter" style={{ paddingLeft: "0" }}>
+      <div style={{
+        display: "flex",
+        gap: "0.5rem",
+        alignItems: "flex-start",
+      }}>
+        <span style={{ color: "var(--amber)", flexShrink: 0, fontFamily: "var(--mono)", fontSize: "13px", marginTop: "1px" }}>
+          &gt;
+        </span>
+        <span style={{
+          color: "var(--amber)",
+          fontFamily: "var(--mono)",
+          fontSize: "13px",
+          lineHeight: "1.6",
+          wordBreak: "break-word",
+        }}>
+          {content}
+        </span>
       </div>
     </div>
   );
 }
 
-function SourcesPanel({ sources }: { sources: Source[] }) {
+function SourceTags({ sources }: { sources: Source[] }) {
   if (!sources || sources.length === 0) return null;
-
   return (
-    <div className="mt-3 pt-3 border-t border-gray-100">
-      <p className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">
-        Sources
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {sources.map((source, i) => (
-          <a
-            key={i}
-            href={source.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:border-indigo-300 hover:text-indigo-700 transition-colors"
-          >
-            <span
-              className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sourceTypeBadgeColor(
-                source.source_type
-              )}`}
-            >
-              {sourceTypeLabel(source.source_type)}
-            </span>
-            <span className="truncate max-w-[200px]">{source.title}</span>
-          </a>
-        ))}
-      </div>
+    <div style={{
+      marginTop: "0.75rem",
+      display: "flex",
+      flexWrap: "wrap" as const,
+      gap: "0.375rem",
+      paddingLeft: "0.75rem",
+    }}>
+      {sources.map((s, i) => (
+        <a
+          key={i}
+          href={s.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={s.title}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.25rem",
+            fontFamily: "var(--mono)",
+            fontSize: "11px",
+            color: "var(--text-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "2px",
+            padding: "1px 6px",
+            textDecoration: "none",
+            transition: "color 0.15s, border-color 0.15s",
+            maxWidth: "220px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap" as const,
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.color = "var(--accent)";
+            (e.currentTarget as HTMLElement).style.borderColor = "var(--accent-dim)";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.color = "var(--text-2)";
+            (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+          }}
+        >
+          <span style={{ color: "var(--accent)", opacity: 0.7 }}>[{sourcePrefix(s.source_type)}]</span>
+          {s.title}
+        </a>
+      ))}
     </div>
   );
 }
 
-function AssistantBubble({
+function AssistantBlock({
   content,
   sources,
   noInfo,
@@ -110,45 +127,48 @@ function AssistantBubble({
   noInfo?: boolean;
 }) {
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[80%]">
-        <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs select-none mt-0.5">
-            A
-          </div>
-          <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 text-sm shadow-sm border border-gray-100 flex-1">
-            {noInfo ? (
-              <p className="text-gray-400 italic">{content}</p>
-            ) : (
-              <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
-                {content}
-              </p>
-            )}
-            {!noInfo && sources && sources.length > 0 && (
-              <SourcesPanel sources={sources} />
-            )}
-          </div>
-        </div>
-      </div>
+    <div className="msg-enter" style={{
+      borderLeft: `2px solid ${noInfo ? "var(--text-3)" : "var(--accent)"}`,
+      paddingLeft: "0.75rem",
+      marginLeft: "1rem",
+    }}>
+      <p style={{
+        fontFamily: noInfo ? "var(--mono)" : "var(--serif)",
+        fontSize: noInfo ? "12px" : "14px",
+        color: noInfo ? "var(--text-2)" : "var(--text-1)",
+        lineHeight: "1.75",
+        fontStyle: noInfo ? "italic" : "normal",
+        margin: 0,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}>
+        {content}
+      </p>
+      {!noInfo && sources && sources.length > 0 && (
+        <SourceTags sources={sources} />
+      )}
     </div>
   );
 }
 
-function TypingIndicator() {
+function ScanningIndicator() {
   return (
-    <div className="flex justify-start">
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs select-none">
-          A
-        </div>
-        <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-100">
-          <div className="flex gap-1.5 items-center h-4">
-            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-            <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-          </div>
-        </div>
-      </div>
+    <div style={{
+      borderLeft: "2px solid var(--accent-dim)",
+      paddingLeft: "0.75rem",
+      marginLeft: "1rem",
+      display: "flex",
+      alignItems: "center",
+      gap: "0.5rem",
+    }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--text-2)" }}>
+        scanning knowledge base
+      </span>
+      <span style={{ display: "flex", gap: "3px", alignItems: "center" }}>
+        <span className="scanning-dot" style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+        <span className="scanning-dot" style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+        <span className="scanning-dot" style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+      </span>
     </div>
   );
 }
@@ -161,8 +181,65 @@ const STARTER_QUESTIONS = [
   "How do I check logs for a specific pod?",
 ];
 
+function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
+  return (
+    <div style={{
+      display: "flex",
+      flexDirection: "column" as const,
+      alignItems: "flex-start",
+      justifyContent: "center",
+      height: "100%",
+      padding: "2rem 0",
+      gap: "2rem",
+    }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            ready
+          </span>
+          <span className="cursor-blink" />
+        </div>
+        <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--text-2)", margin: 0 }}>
+          Query internal knowledge — Confluence, Jira, runbooks.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: "0.375rem" }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.25rem" }}>
+          suggested queries
+        </span>
+        {STARTER_QUESTIONS.map((q) => (
+          <button
+            key={q}
+            onClick={() => onSelect(q)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "var(--mono)",
+              fontSize: "12px",
+              color: "var(--text-2)",
+              padding: "0",
+              textAlign: "left",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              transition: "color 0.15s",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--accent)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-2)")}
+          >
+            <span style={{ color: "var(--text-3)" }}>//</span>
+            {q}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Main ChatUI component
+// Main ChatUI
 // ---------------------------------------------------------------------------
 export default function ChatUI() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -171,63 +248,45 @@ export default function ChatUI() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  // Build history array for the API (exclude the in-progress assistant msg)
-  function buildHistory(): { role: "user" | "assistant"; content: string }[] {
+  function buildHistory() {
     return messages.map((m) => ({ role: m.role, content: m.content }));
   }
 
   async function sendMessage(text: string) {
     if (!text.trim() || loading) return;
 
-    const userMsg: Message = {
-      id: generateId(),
-      role: "user",
-      content: text.trim(),
-    };
-
+    const userMsg: Message = { id: generateId(), role: "user", content: text.trim() };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
     try {
-      const history = buildHistory();
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text.trim(), history }),
+        body: JSON.stringify({ message: text.trim(), history: buildHistory() }),
       });
 
-      if (!res.ok) {
-        throw new Error(`API error ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`API error ${res.status}`);
 
       const data = await res.json();
       const answer: string = data.answer || "No answer returned.";
       const sources: Source[] = data.sources || [];
       const noInfo = answer.includes(NO_INFO_ANSWER);
 
-      const assistantMsg: Message = {
-        id: generateId(),
-        role: "assistant",
-        content: answer,
-        sources,
-        noInfo,
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => [
+        ...prev,
+        { id: generateId(), role: "assistant", content: answer, sources, noInfo },
+      ]);
     } catch (err) {
-      const errorMsg: Message = {
-        id: generateId(),
-        role: "assistant",
-        content: `Sorry, something went wrong: ${String(err)}`,
-        noInfo: true,
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [
+        ...prev,
+        { id: generateId(), role: "assistant", content: `error: ${String(err)}`, noInfo: true },
+      ]);
     } finally {
       setLoading(false);
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -246,40 +305,65 @@ export default function ChatUI() {
     }
   }
 
+  // Auto-resize textarea
+  function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+  }
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative", zIndex: 1 }}>
+
+      {/* Header */}
+      <div style={{
+        flexShrink: 0,
+        borderBottom: "1px solid var(--border)",
+        padding: "0.75rem 1.5rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        background: "var(--surface)",
+      }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "13px", color: "var(--accent)", fontWeight: 700, letterSpacing: "-0.02em" }}>
+            acme<span style={{ color: "var(--text-2)" }}>/</span>kb
+          </span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--text-3)", border: "1px solid var(--border)", padding: "1px 5px", borderRadius: "2px" }}>
+            v1.0
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: "50%",
+            background: "var(--accent)",
+            display: "inline-block",
+            boxShadow: "0 0 6px var(--accent)",
+          }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--text-2)" }}>
+            RAG · hybrid search
+          </span>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div style={{
+        flex: 1,
+        overflowY: "auto",
+        padding: "1.5rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "1.25rem",
+      }}>
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-6 pb-16">
-            <div>
-              <h2 className="text-2xl font-semibold text-gray-700 mb-2">
-                How can I help?
-              </h2>
-              <p className="text-sm text-gray-400 max-w-sm">
-                Ask anything about Acme's internal docs, runbooks, Confluence
-                pages, or Jira tickets.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 justify-center max-w-lg">
-              {STARTER_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => sendMessage(q)}
-                  className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors text-left shadow-sm"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
+          <EmptyState onSelect={(q) => sendMessage(q)} />
         )}
 
         {messages.map((msg) =>
           msg.role === "user" ? (
-            <UserBubble key={msg.id} content={msg.content} />
+            <UserLine key={msg.id} content={msg.content} />
           ) : (
-            <AssistantBubble
+            <AssistantBlock
               key={msg.id}
               content={msg.content}
               sources={msg.sources}
@@ -288,73 +372,95 @@ export default function ChatUI() {
           )
         )}
 
-        {loading && <TypingIndicator />}
+        {loading && <ScanningIndicator />}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* Input area */}
-      <div className="flex-shrink-0 border-t border-gray-200 bg-white px-4 py-3">
-        <form
-          onSubmit={handleSubmit}
-          className="flex gap-2 items-end max-w-3xl mx-auto"
-        >
+      {/* Input */}
+      <div style={{
+        flexShrink: 0,
+        borderTop: "1px solid var(--border)",
+        background: "var(--surface)",
+        padding: "0.875rem 1.5rem",
+      }}>
+        <form onSubmit={handleSubmit} style={{ display: "flex", alignItems: "flex-end", gap: "0.75rem" }}>
+          {/* Prompt glyph */}
+          <span style={{
+            fontFamily: "var(--mono)",
+            fontSize: "13px",
+            color: loading ? "var(--text-3)" : "var(--accent)",
+            flexShrink: 0,
+            paddingBottom: "2px",
+            transition: "color 0.2s",
+            userSelect: "none",
+          }}>
+            &gt;_
+          </span>
+
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about deployments, OOM errors, runbooks..."
+            placeholder="ask anything about deployments, incidents, runbooks…"
             rows={1}
-            className="flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all leading-relaxed"
-            style={{ maxHeight: "120px", overflowY: "auto" }}
             disabled={loading}
+            style={{
+              flex: 1,
+              resize: "none",
+              background: "transparent",
+              border: "none",
+              borderBottom: "1px solid var(--border-hi)",
+              outline: "none",
+              fontFamily: "var(--mono)",
+              fontSize: "13px",
+              color: "var(--text-1)",
+              lineHeight: "1.6",
+              padding: "2px 0 4px",
+              overflowY: "hidden",
+              caretColor: "var(--accent)",
+            }}
           />
+
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="flex-shrink-0 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{
+              flexShrink: 0,
+              background: "none",
+              border: "1px solid var(--border-hi)",
+              borderRadius: "2px",
+              padding: "3px 10px",
+              fontFamily: "var(--mono)",
+              fontSize: "11px",
+              color: (!loading && input.trim()) ? "var(--accent)" : "var(--text-3)",
+              cursor: (!loading && input.trim()) ? "pointer" : "not-allowed",
+              transition: "color 0.15s, border-color 0.15s",
+              letterSpacing: "0.05em",
+            }}
+            onMouseEnter={e => {
+              if (!loading && input.trim()) {
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+              }
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hi)";
+            }}
           >
-            {loading ? (
-              <svg
-                className="w-4 h-4 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                />
-              </svg>
-            ) : (
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                />
-              </svg>
-            )}
+            {loading ? "…" : "send"}
           </button>
         </form>
-        <p className="text-center text-xs text-gray-400 mt-2">
-          Press Enter to send &middot; Shift+Enter for new line
-        </p>
+
+        <div style={{
+          marginTop: "0.375rem",
+          paddingLeft: "1.75rem",
+          fontFamily: "var(--mono)",
+          fontSize: "10px",
+          color: "var(--text-3)",
+        }}>
+          ↵ send &nbsp;·&nbsp; shift+↵ newline
+        </div>
       </div>
     </div>
   );
