@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google/generative-ai": "latest",
+    "openai": "latest",
     "next": "15.x",
     "pg": "latest",
     "pgvector": "latest"
