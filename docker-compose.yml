@@ -25,7 +25,7 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -54,7 +54,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       DATABASE_URL: postgresql://postgres:postgres@paradedb:5432/ragdb
     volumes:
-      - ./data:/app/data:ro
+      - ./data:/data:ro
     depends_on:
       paradedb:
         condition: service_healthy
