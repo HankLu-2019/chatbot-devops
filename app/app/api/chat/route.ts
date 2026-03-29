@@ -24,6 +24,7 @@ interface Message {
 interface RequestBody {
   message: string;
   history?: Message[];
+  space?: string;
 }
 
 interface DbRow {
@@ -114,11 +115,48 @@ async function embedQuery(text: string): Promise<number[]> {
 // ---------------------------------------------------------------------------
 // Step 3 — Hybrid search with RRF (BM25 + vector)
 // ---------------------------------------------------------------------------
-async function hybridSearch(query: string, embedding: number[]): Promise<DbRow[]> {
+async function hybridSearch(query: string, embedding: number[], space?: string): Promise<DbRow[]> {
   // Format the vector as a Postgres literal: '[0.1, 0.2, ...]'
   const vectorLiteral = `[${embedding.join(",")}]`;
 
-  const sql = `
+  const useSpaceFilter = typeof space === "string" && space.length > 0;
+
+  // Two distinct SQL strings — space filter is applied inside both CTEs (before RRF ranking).
+  // space is always passed as a positional parameter ($3), never interpolated.
+  const sqlWithSpace = `
+    WITH bm25_results AS (
+      SELECT id,
+             paradedb.score(id) AS bm25_score,
+             ROW_NUMBER() OVER (ORDER BY paradedb.score(id) DESC) AS bm25_rank
+      FROM documents
+      WHERE documents @@@ paradedb.parse($1)
+        AND space = $3
+      LIMIT 50
+    ),
+    vector_results AS (
+      SELECT id,
+             1 - (embedding <=> $2::vector) AS vec_score,
+             ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS vec_rank
+      FROM documents
+      WHERE space = $3
+      ORDER BY embedding <=> $2::vector
+      LIMIT 50
+    ),
+    rrf AS (
+      SELECT COALESCE(b.id, v.id) AS id,
+             COALESCE(1.0 / (60 + b.bm25_rank), 0) +
+             COALESCE(1.0 / (60 + v.vec_rank), 0) AS rrf_score
+      FROM bm25_results b
+      FULL JOIN vector_results v ON b.id = v.id
+    )
+    SELECT d.id, d.title, d.content, d.url, d.source_type, r.rrf_score
+    FROM rrf r
+    JOIN documents d ON d.id = r.id
+    ORDER BY r.rrf_score DESC
+    LIMIT 30
+  `;
+
+  const sqlWithoutSpace = `
     WITH bm25_results AS (
       SELECT id,
              paradedb.score(id) AS bm25_score,
@@ -151,7 +189,9 @@ async function hybridSearch(query: string, embedding: number[]): Promise<DbRow[]
 
   const client = await pool.connect();
   try {
-    const result = await client.query(sql, [query, vectorLiteral]);
+    const result = useSpaceFilter
+      ? await client.query(sqlWithSpace, [query, vectorLiteral, space])
+      : await client.query(sqlWithoutSpace, [query, vectorLiteral]);
     return result.rows as DbRow[];
   } finally {
     client.release();
@@ -269,7 +309,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { message, history = [] } = body;
+  const { message, history = [], space } = body;
 
   if (!message || typeof message !== "string" || !message.trim()) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
@@ -282,8 +322,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // 2. Embed the rewritten query
     const embedding = await embedQuery(rewrittenQuery);
 
-    // 3. Hybrid search (BM25 + vector with RRF)
-    const searchRows = await hybridSearch(rewrittenQuery, embedding);
+    // 3. Hybrid search (BM25 + vector with RRF), optionally scoped to a team space
+    const searchRows = await hybridSearch(rewrittenQuery, embedding, space);
 
     if (searchRows.length === 0) {
       return NextResponse.json({

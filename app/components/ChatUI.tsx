@@ -226,7 +226,7 @@ const STARTER_QUESTIONS = [
   "How do I check logs for a specific pod?",
 ];
 
-function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
+function EmptyState({ onSelect, questions }: { onSelect: (q: string) => void; questions: string[] }) {
   return (
     <div style={{
       display: "flex",
@@ -280,7 +280,7 @@ function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
         width: "100%",
         maxWidth: "540px",
       }}>
-        {STARTER_QUESTIONS.map((q) => (
+        {questions.map((q) => (
           <button
             key={q}
             onClick={() => onSelect(q)}
@@ -321,12 +321,21 @@ function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
 // ---------------------------------------------------------------------------
 // Main ChatUI
 // ---------------------------------------------------------------------------
-export default function ChatUI() {
+interface ChatUIProps {
+  space?: string;
+  title?: string;
+  exampleQuestions?: string[];
+}
+
+export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const displayTitle = title ?? "Acme Engineering Assistant";
+  const displayQuestions =
+    exampleQuestions && exampleQuestions.length > 0 ? exampleQuestions : STARTER_QUESTIONS;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -348,7 +357,7 @@ export default function ChatUI() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text.trim(), history: buildHistory() }),
+        body: JSON.stringify({ message: text.trim(), history: buildHistory(), space }),
       });
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
@@ -421,7 +430,7 @@ export default function ChatUI() {
           </div>
           <div>
             <div style={{ fontFamily: "var(--sans)", fontSize: "15px", fontWeight: 500, color: "var(--text-1)", lineHeight: 1.2 }}>
-              Acme Engineering Assistant
+              {displayTitle}
             </div>
             <div style={{ fontFamily: "var(--sans)", fontSize: "11px", color: "var(--text-3)", lineHeight: 1 }}>
               Powered by RAG · Confluence · Jira · Runbooks
@@ -456,7 +465,7 @@ export default function ChatUI() {
         boxSizing: "border-box",
       }}>
         {messages.length === 0 ? (
-          <EmptyState onSelect={sendMessage} />
+          <EmptyState onSelect={sendMessage} questions={displayQuestions} />
         ) : (
           messages.map((msg) =>
             msg.role === "user" ? (

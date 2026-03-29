@@ -27,3 +27,7 @@ CREATE INDEX IF NOT EXISTS documents_embedding_hnsw_idx
 CREATE INDEX IF NOT EXISTS documents_bm25_idx
     ON documents USING bm25 (id, title, content)
     WITH (key_field = 'id');
+
+-- B-tree index on space column for team-scoped filtering
+CREATE INDEX IF NOT EXISTS documents_space_idx
+    ON documents (space);
