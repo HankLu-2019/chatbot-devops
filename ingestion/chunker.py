@@ -140,6 +140,7 @@ def chunk_jira(ticket: dict) -> list[dict]:
     url = ticket.get("url", "")
     updated_at = ticket.get("updated_at")
 
+    space = ticket.get("space", "")
     chunks: list[dict] = []
 
     # Main body chunk
@@ -148,6 +149,7 @@ def chunk_jira(ticket: dict) -> list[dict]:
         "content":      body_text,
         "title":        f"[{key}] {summary}",
         "source_type":  "jira",
+        "space":        space,
         "ticket_id":    key,
         "status":       status,
         "url":          url,
@@ -164,6 +166,7 @@ def chunk_jira(ticket: dict) -> list[dict]:
             "content":      comment_text,
             "title":        f"[{key}] Comment by {author}",
             "source_type":  "jira",
+            "space":        space,
             "ticket_id":    key,
             "status":       status,
             "url":          url,
@@ -214,6 +217,7 @@ def chunk_doc(doc: dict) -> list[dict]:
             "content":      group_text,
             "title":        chunk_title,
             "source_type":  doc.get("source_type", "doc"),
+            "space":        doc.get("space", ""),
             "url":          doc.get("url", ""),
             "updated_at":   doc.get("updated_at"),
             "content_hash": content_hash(group_text),

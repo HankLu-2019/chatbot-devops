@@ -1,0 +1,35 @@
+CI/CD Pipeline Troubleshooting Guide
+
+This runbook covers the most common CI/CD pipeline failures at Acme and how to resolve them quickly.
+
+== Build Stage Failures ==
+
+Docker build fails with "base image not found"
+The base image tag specified in your Dockerfile no longer exists. Pin your base image to a specific digest rather than a mutable tag like `latest`. Find the current digest at registry.acme.internal and update your Dockerfile:
+  FROM registry.acme.internal/base/node:20@sha256:<digest>
+
+Build context too large (slow builds or timeout)
+Check your .dockerignore file. It should exclude node_modules, .git, test fixtures, and build artifacts. A build context over 100MB is a warning sign. Use `docker build --progress=plain` locally to see what is being sent.
+
+== Test Stage Failures ==
+
+Integration tests pass locally but fail in CI
+The most common causes: (1) missing environment variables — compare your local .env with the CI environment secrets, (2) timezone differences — always use UTC in tests, (3) port conflicts — in CI, all services share the same host so hardcoded ports may conflict. Use dynamic port allocation or Docker Compose service names.
+
+Test database not initialized
+The CI workflow spins up a Postgres container but your migrations may not have run. Ensure your test setup script runs `npm run db:migrate` or equivalent before tests start.
+
+== Deploy Stage Failures ==
+
+ArgoCD sync stuck in Progressing state
+Check the ArgoCD application health at https://argocd.acme.internal. Common causes: (1) new pods failing health checks — check pod logs, (2) resource quota exceeded — check namespace quota with `kubectl describe resourcequota -n <namespace>`, (3) image pull errors — verify the image tag exists in the registry.
+
+ImagePullBackOff after deployment
+The image tag pushed by the build stage does not exist in the registry, or the pull secret is expired. Check the registry: curl -H "Authorization: Bearer $(docker login registry.acme.internal --password-stdin)" https://registry.acme.internal/v2/<service>/tags/list. If the pull secret is expired, contact the platform team to rotate the imagePullSecret in the namespace.
+
+Production deployment approval not triggering
+Check that the GitHub environment protection rule is configured on the `production` environment and that the required reviewers list includes the current on-call engineer. Approvals expire after 30 days of inactivity — re-add reviewers if needed.
+
+== Notification and Monitoring ==
+
+All pipeline completions are posted to #deployments in Slack. If you are not receiving notifications, check that you have joined the channel and that the GitHub-Slack integration is authorized for your repository (Settings > Integrations in the GitHub repo). Failed pipelines also create a PagerDuty incident if the failure is on the main branch.

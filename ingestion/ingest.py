@@ -150,6 +150,28 @@ def load_jira_chunks() -> list[dict]:
     return chunks
 
 
+
+# Map doc filename prefixes to team space values
+DOC_SPACE_MAP = {
+    "cicd-": "CI-CD",
+    "ci-cd-": "CI-CD",
+    "infra-": "INFRA",
+    "infrastructure-": "INFRA",
+    "runbook-": "INFRA",
+    "eng-env-": "ENG-ENV",
+    "onboarding-": "ENG-ENV",
+}
+
+
+def _infer_doc_space(stem: str) -> str:
+    """Infer team space from a doc filename stem."""
+    lower = stem.lower()
+    for prefix, space in DOC_SPACE_MAP.items():
+        if lower.startswith(prefix):
+            return space
+    return ""
+
+
 def load_doc_chunks() -> list[dict]:
     docs_dir = DATA_DIR / "docs"
     chunks = []
@@ -160,6 +182,7 @@ def load_doc_chunks() -> list[dict]:
             "title":       txt_path.stem.replace("-", " ").title(),
             "content":     content,
             "source_type": "doc",
+            "space":       _infer_doc_space(txt_path.stem),
             "url":         f"https://acme.atlassian.net/wiki/docs/{txt_path.stem}",
             "updated_at":  datetime.now(tz=timezone.utc).isoformat(),
         }

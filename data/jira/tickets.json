@@ -30,7 +30,8 @@
         "created_at": "2026-02-01T10:30:00Z"
       }
     ],
-    "updated_at": "2026-02-01T10:30:00Z"
+    "updated_at": "2026-02-01T10:30:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-55",
@@ -68,7 +69,8 @@
         "created_at": "2026-02-03T15:05:00Z"
       }
     ],
-    "updated_at": "2026-02-03T15:05:00Z"
+    "updated_at": "2026-02-03T15:05:00Z",
+    "space": "ENG-ENV"
   },
   {
     "key": "ENG-61",
@@ -91,7 +93,8 @@
         "created_at": "2026-02-05T17:30:00Z"
       }
     ],
-    "updated_at": "2026-02-05T17:30:00Z"
+    "updated_at": "2026-02-05T17:30:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-68",
@@ -109,7 +112,8 @@
         "created_at": "2026-02-08T10:00:00Z"
       }
     ],
-    "updated_at": "2026-02-08T10:00:00Z"
+    "updated_at": "2026-02-08T10:00:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-73",
@@ -132,7 +136,8 @@
         "created_at": "2026-02-10T10:15:00Z"
       }
     ],
-    "updated_at": "2026-02-10T10:15:00Z"
+    "updated_at": "2026-02-10T10:15:00Z",
+    "space": "CI-CD"
   },
   {
     "key": "ENG-79",
@@ -155,7 +160,8 @@
         "created_at": "2026-02-12T09:00:00Z"
       }
     ],
-    "updated_at": "2026-02-12T09:00:00Z"
+    "updated_at": "2026-02-12T09:00:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-84",
@@ -178,7 +184,8 @@
         "created_at": "2026-02-14T11:20:00Z"
       }
     ],
-    "updated_at": "2026-02-14T11:20:00Z"
+    "updated_at": "2026-02-14T11:20:00Z",
+    "space": "CI-CD"
   },
   {
     "key": "ENG-91",
@@ -201,7 +208,8 @@
         "created_at": "2026-02-16T15:00:00Z"
       }
     ],
-    "updated_at": "2026-02-16T15:00:00Z"
+    "updated_at": "2026-02-16T15:00:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-96",
@@ -229,7 +237,8 @@
         "created_at": "2026-02-18T10:30:00Z"
       }
     ],
-    "updated_at": "2026-02-18T10:30:00Z"
+    "updated_at": "2026-02-18T10:30:00Z",
+    "space": "ENG-ENV"
   },
   {
     "key": "ENG-103",
@@ -257,7 +266,8 @@
         "created_at": "2026-02-20T17:00:00Z"
       }
     ],
-    "updated_at": "2026-02-20T17:00:00Z"
+    "updated_at": "2026-02-20T17:00:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-108",
@@ -271,7 +281,7 @@
     "comments": [
       {
         "author": "grace",
-        "body": "Two options:\n\n**Option 1 (Grafana Silence - recommended for short windows):**\n1. Go to https://grafana.acme.internal\n2. Navigate to Alerting → Silences\n3. Click 'New Silence'\n4. Set matchers: service=inventory-service (or more specific alert labels)\n5. Set start/end time for your maintenance window\n6. Add a comment: 'Planned index rebuild on inventory DB - ENG-108'\n7. Click 'Save'\n\n**Option 2 (PagerDuty Maintenance Window):**\nFor windows longer than 2 hours, create a maintenance window in PagerDuty at https://acme.pagerduty.com to suppress pages during the window.\n\nRemember: Don't silence indefinitely. The 4-hour maximum is a good guideline.",
+        "body": "Two options:\n\n**Option 1 (Grafana Silence - recommended for short windows):**\n1. Go to https://grafana.acme.internal\n2. Navigate to Alerting \u2192 Silences\n3. Click 'New Silence'\n4. Set matchers: service=inventory-service (or more specific alert labels)\n5. Set start/end time for your maintenance window\n6. Add a comment: 'Planned index rebuild on inventory DB - ENG-108'\n7. Click 'Save'\n\n**Option 2 (PagerDuty Maintenance Window):**\nFor windows longer than 2 hours, create a maintenance window in PagerDuty at https://acme.pagerduty.com to suppress pages during the window.\n\nRemember: Don't silence indefinitely. The 4-hour maximum is a good guideline.",
         "created_at": "2026-02-22T11:00:00Z"
       },
       {
@@ -280,7 +290,8 @@
         "created_at": "2026-02-22T11:30:00Z"
       }
     ],
-    "updated_at": "2026-02-22T11:30:00Z"
+    "updated_at": "2026-02-22T11:30:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-115",
@@ -308,7 +319,8 @@
         "created_at": "2026-02-24T14:35:00Z"
       }
     ],
-    "updated_at": "2026-02-24T14:35:00Z"
+    "updated_at": "2026-02-24T14:35:00Z",
+    "space": "CI-CD"
   },
   {
     "key": "ENG-122",
@@ -331,7 +343,8 @@
         "created_at": "2026-02-26T11:30:00Z"
       }
     ],
-    "updated_at": "2026-02-26T11:30:00Z"
+    "updated_at": "2026-02-26T11:30:00Z",
+    "space": "ENG-ENV"
   },
   {
     "key": "ENG-129",
@@ -349,7 +362,8 @@
         "created_at": "2026-02-28T09:00:00Z"
       }
     ],
-    "updated_at": "2026-02-28T09:00:00Z"
+    "updated_at": "2026-02-28T09:00:00Z",
+    "space": "INFRA"
   },
   {
     "key": "ENG-135",
@@ -372,6 +386,7 @@
         "created_at": "2026-03-03T14:00:00Z"
       }
     ],
-    "updated_at": "2026-03-03T14:00:00Z"
+    "updated_at": "2026-03-03T14:00:00Z",
+    "space": "INFRA"
   }
 ]
