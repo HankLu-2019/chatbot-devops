@@ -77,6 +77,19 @@ export default function Sidebar() {
             active={pathname === `/${team.slug}`}
           />
         ))}
+
+        <div style={{
+          height: "1px",
+          background: "var(--border)",
+          margin: "4px 8px",
+        }} />
+
+        <NavItem
+          href="/search"
+          label="Search All Teams"
+          description="Ask across all knowledge bases"
+          active={pathname === "/search"}
+        />
       </div>
 
       {/* Footer */}

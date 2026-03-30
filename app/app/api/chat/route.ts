@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import pool from "@/lib/db";
+import { TEAMS } from "@/lib/teams";
+
+// Map space values (e.g. "CI-CD") to human-readable team labels (e.g. "CI/CD")
+const SPACE_LABEL_MAP = new Map(TEAMS.map((t) => [t.space, t.label]));
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,6 +37,7 @@ interface DbRow {
   content: string;
   url: string;
   source_type: string;
+  space: string;
   rrf_score: number;
 }
 
@@ -149,7 +154,7 @@ async function hybridSearch(query: string, embedding: number[], space?: string):
       FROM bm25_results b
       FULL JOIN vector_results v ON b.id = v.id
     )
-    SELECT d.id, d.title, d.content, d.url, d.source_type, r.rrf_score
+    SELECT d.id, d.title, d.content, d.url, d.source_type, d.space, r.rrf_score
     FROM rrf r
     JOIN documents d ON d.id = r.id
     ORDER BY r.rrf_score DESC
@@ -180,7 +185,7 @@ async function hybridSearch(query: string, embedding: number[], space?: string):
       FROM bm25_results b
       FULL JOIN vector_results v ON b.id = v.id
     )
-    SELECT d.id, d.title, d.content, d.url, d.source_type, r.rrf_score
+    SELECT d.id, d.title, d.content, d.url, d.source_type, d.space, r.rrf_score
     FROM rrf r
     JOIN documents d ON d.id = r.id
     ORDER BY r.rrf_score DESC
@@ -266,18 +271,24 @@ function filterByThreshold(
 async function generateAnswer(
   query: string,
   contextRows: DbRow[],
-  history: Message[]
+  history: Message[],
+  isGlobal = false
 ): Promise<string> {
   const contextText = contextRows
-    .map(
-      (r, i) =>
-        `[${i + 1}] Source: ${r.title} (${r.url})\n${r.content}`
-    )
+    .map((r, i) => {
+      const teamLabel = SPACE_LABEL_MAP.get(r.space) ?? r.space;
+      const teamPrefix = isGlobal && teamLabel ? `[Team: ${teamLabel}] ` : "";
+      return `[${i + 1}] ${teamPrefix}Source: ${r.title} (${r.url})\n${r.content}`;
+    })
     .join("\n\n---\n\n");
+
+  const attributionInstruction = isGlobal
+    ? "\nFor each source you cite, name the owning team explicitly in your answer (e.g., 'according to the CI/CD team\u2019s pipeline guide\u2026')."
+    : "";
 
   const systemPrompt = `You are an internal knowledge assistant for Acme Engineering.
 Answer based ONLY on the provided context. Cite the source URL for every claim.
-If you cannot answer from the context, say so clearly.
+If you cannot answer from the context, say so clearly.${attributionInstruction}
 
 Context:
 ${contextText}`;
@@ -347,8 +358,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // 6. Generate answer
-    const answer = await generateAnswer(message, topRows, history);
+    // 6. Generate answer (isGlobal = true when no space filter was applied)
+    const isGlobal = typeof space !== "string" || space.length === 0;
+    const answer = await generateAnswer(message, topRows, history, isGlobal);
 
     // Build deduplicated sources list
     const seenUrls = new Set<string>();
