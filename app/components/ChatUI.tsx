@@ -9,6 +9,7 @@ interface Source {
   title: string;
   url: string;
   source_type: string;
+  snippet: string;
 }
 
 interface Message {
@@ -65,56 +66,128 @@ function AsstAvatar() {
 // Source chips
 // ---------------------------------------------------------------------------
 function SourceChips({ sources }: { sources: Source[] }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
   if (!sources || sources.length === 0) return null;
   return (
-    <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap" as const, gap: "6px" }}>
+    <div style={{ marginTop: "12px", display: "flex", flexDirection: "column" as const, gap: "6px" }}>
       {sources.map((s, i) => {
         const chip = sourceChipStyle(s.source_type);
+        const isOpen = openIndex === i;
         return (
-          <a
-            key={i}
-            href={s.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={s.title}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-              padding: "3px 10px 3px 6px",
-              borderRadius: "12px",
-              background: chip.bg,
-              textDecoration: "none",
-              transition: "filter 0.15s",
-              maxWidth: "260px",
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.filter = "brightness(0.95)"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.filter = "none"}
-          >
-            <span style={{
-              fontFamily: "var(--sans)",
-              fontSize: "11px",
-              fontWeight: 600,
-              color: chip.color,
-              background: chip.color + "18",
-              borderRadius: "6px",
-              padding: "0 5px",
-              lineHeight: "18px",
-              flexShrink: 0,
-            }}>
-              {chip.label}
-            </span>
-            <span style={{
-              fontFamily: "var(--sans)",
-              fontSize: "12px",
-              color: "var(--text-2)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap" as const,
-            }}>
-              {s.title}
-            </span>
-          </a>
+          <div key={i}>
+            {/* Chip row: [badge + title toggle] [↗ link] */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <button
+                onClick={() => setOpenIndex(isOpen ? null : i)}
+                title={s.title}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "3px 10px 3px 6px",
+                  borderRadius: "12px",
+                  background: chip.bg,
+                  border: "none",
+                  cursor: "pointer",
+                  textDecoration: "none",
+                  transition: "filter 0.15s",
+                  maxWidth: "260px",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.filter = "brightness(0.95)"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.filter = "none"}
+              >
+                <span style={{
+                  fontFamily: "var(--sans)",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: chip.color,
+                  background: chip.color + "18",
+                  borderRadius: "6px",
+                  padding: "0 5px",
+                  lineHeight: "18px",
+                  flexShrink: 0,
+                }}>
+                  {chip.label}
+                </span>
+                <span style={{
+                  fontFamily: "var(--sans)",
+                  fontSize: "12px",
+                  color: "var(--text-2)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap" as const,
+                }}>
+                  {s.title}
+                </span>
+              </button>
+              {/* ↗ direct URL icon */}
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                title="Open original"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "4px",
+                  color: "var(--text-3)",
+                  textDecoration: "none",
+                  fontSize: "12px",
+                  transition: "color 0.12s, background 0.12s",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.color = "var(--blue)";
+                  (e.currentTarget as HTMLElement).style.background = "var(--blue-light, rgba(26,115,232,0.08))";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.color = "var(--text-3)";
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
+              >
+                ↗
+              </a>
+            </div>
+            {/* Peek panel */}
+            {isOpen && (
+              <div style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                padding: "10px 12px",
+                marginTop: "6px",
+                maxWidth: "480px",
+              }}>
+                <p style={{
+                  margin: "0 0 8px",
+                  fontFamily: "var(--sans)",
+                  fontSize: "12px",
+                  color: "var(--text-2)",
+                  lineHeight: 1.5,
+                  wordBreak: "break-word",
+                }}>
+                  {s.snippet || "No preview available."}
+                </p>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontFamily: "var(--sans)",
+                    fontSize: "12px",
+                    color: "var(--blue)",
+                    textDecoration: "none",
+                  }}
+                >
+                  View original →
+                </a>
+              </div>
+            )}
+          </div>
         );
       })}
     </div>

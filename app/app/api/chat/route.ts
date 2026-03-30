@@ -51,6 +51,7 @@ interface Source {
   title: string;
   url: string;
   source_type: string;
+  snippet: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +267,16 @@ function filterByThreshold(
 }
 
 // ---------------------------------------------------------------------------
+// Snippet helper — first ~200 chars trimmed to word boundary
+// ---------------------------------------------------------------------------
+function makeSnippet(content: string): string {
+  const raw = (content ?? "").slice(0, 220);
+  if (raw.length < 220) return raw;
+  const lastSpace = raw.lastIndexOf(" ", 200);
+  return lastSpace > 0 ? raw.slice(0, lastSpace) : raw.slice(0, 200);
+}
+
+// ---------------------------------------------------------------------------
 // Step 6 — Generate answer with Gemini
 // ---------------------------------------------------------------------------
 async function generateAnswer(
@@ -372,6 +383,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           title: row.title,
           url: row.url,
           source_type: row.source_type,
+          snippet: makeSnippet(row.content),
         });
       }
     }
