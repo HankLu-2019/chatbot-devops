@@ -342,7 +342,13 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
   }, [messages, loading]);
 
   function buildHistory() {
-    return messages.map((m) => ({ role: m.role, content: m.content }));
+    return messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
+  }
+
+  function resetConversation() {
+    if (loading) return;
+    setMessages([]);
+    setInput("");
   }
 
   async function sendMessage(text: string) {
@@ -437,16 +443,46 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
             </div>
           </div>
         </div>
-        <div style={{
-          fontFamily: "var(--mono)",
-          fontSize: "11px",
-          color: "var(--text-3)",
-          background: "var(--surface-2)",
-          border: "1px solid var(--border)",
-          borderRadius: "12px",
-          padding: "2px 10px",
-        }}>
-          internal · confidential
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            onClick={resetConversation}
+            disabled={loading}
+            title="New conversation"
+            style={{
+              fontFamily: "var(--sans)",
+              fontSize: "12px",
+              color: loading ? "var(--text-3)" : "var(--text-2)",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "12px",
+              padding: "2px 10px",
+              cursor: loading ? "default" : "pointer",
+              transition: "border-color 0.15s, color 0.15s",
+            }}
+            onMouseEnter={e => {
+              if (!loading) {
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--blue)";
+                (e.currentTarget as HTMLElement).style.color = "var(--blue)";
+              }
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+              (e.currentTarget as HTMLElement).style.color = loading ? "var(--text-3)" : "var(--text-2)";
+            }}
+          >
+            New conversation
+          </button>
+          <div style={{
+            fontFamily: "var(--mono)",
+            fontSize: "11px",
+            color: "var(--text-3)",
+            background: "var(--surface-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "12px",
+            padding: "2px 10px",
+          }}>
+            internal · confidential
+          </div>
         </div>
       </div>
 
