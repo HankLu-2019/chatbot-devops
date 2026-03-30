@@ -18,6 +18,7 @@ interface Message {
   content: string;
   sources?: Source[];
   noInfo?: boolean;
+  question?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +196,73 @@ function SourceChips({ sources }: { sources: Source[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Feedback thumbs
+// ---------------------------------------------------------------------------
+function FeedbackThumbs({ space, question }: { space?: string; question?: string }) {
+  const [vote, setVote] = useState<"up" | "down" | null>(null);
+
+  function handleVote(v: "up" | "down") {
+    if (vote !== null) return;
+    setVote(v);
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ space, question: question ?? "", vote: v }),
+    }).catch(() => {});
+  }
+
+  const baseStyle: React.CSSProperties = {
+    background: "transparent",
+    border: "none",
+    padding: "2px 4px",
+    cursor: vote !== null ? "default" : "pointer",
+    borderRadius: "4px",
+    display: "inline-flex",
+    alignItems: "center",
+    transition: "opacity 0.15s",
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "2px", marginTop: "8px" }}>
+      <button
+        onClick={() => handleVote("up")}
+        disabled={vote !== null}
+        title="Helpful"
+        style={{
+          ...baseStyle,
+          opacity: vote === "down" ? 0.3 : 1,
+        }}
+        onMouseEnter={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "0.7"; }}
+        onMouseLeave={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={vote === "up" ? "var(--green, #1e8e3e)" : "none"}
+          stroke={vote === "up" ? "var(--green, #1e8e3e)" : "var(--text-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+          <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+        </svg>
+      </button>
+      <button
+        onClick={() => handleVote("down")}
+        disabled={vote !== null}
+        title="Not helpful"
+        style={{
+          ...baseStyle,
+          opacity: vote === "up" ? 0.3 : 1,
+        }}
+        onMouseEnter={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "0.7"; }}
+        onMouseLeave={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={vote === "down" ? "var(--red, #d93025)" : "none"}
+          stroke={vote === "down" ? "var(--red, #d93025)" : "var(--text-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
+          <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Message rows
 // ---------------------------------------------------------------------------
 function UserMessage({ content }: { content: string }) {
@@ -220,9 +288,9 @@ function UserMessage({ content }: { content: string }) {
 }
 
 function AssistantMessage({
-  content, sources, noInfo,
+  content, sources, noInfo, space, question,
 }: {
-  content: string; sources?: Source[]; noInfo?: boolean;
+  content: string; sources?: Source[]; noInfo?: boolean; space?: string; question?: string;
 }) {
   return (
     <div className="msg-enter" style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
@@ -263,6 +331,9 @@ function AssistantMessage({
             </div>
             <SourceChips sources={sources} />
           </>
+        )}
+        {!noInfo && (
+          <FeedbackThumbs space={space} question={question} />
         )}
       </div>
     </div>
@@ -448,7 +519,7 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
 
       setMessages((prev) => [
         ...prev,
-        { id: generateId(), role: "assistant", content: answer, sources, noInfo },
+        { id: generateId(), role: "assistant", content: answer, sources, noInfo, question: text.trim() },
       ]);
     } catch (err) {
       setMessages((prev) => [
@@ -585,6 +656,8 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
                 content={msg.content}
                 sources={msg.sources}
                 noInfo={msg.noInfo}
+                space={space}
+                question={msg.question}
               />
             )
           )
