@@ -359,6 +359,34 @@ function TypingIndicator() {
   );
 }
 
+function StreamingMessage({ content }: { content: string }) {
+  return (
+    <div className="msg-enter" style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+      <AsstAvatar />
+      <div style={{
+        maxWidth: "78%",
+        background: "var(--surface)",
+        borderRadius: "4px 18px 18px 18px",
+        padding: "12px 16px",
+        boxShadow: "var(--shadow-1)",
+        border: "1px solid var(--border)",
+      }}>
+        <p style={{
+          margin: 0,
+          fontFamily: "var(--sans)",
+          fontSize: "14px",
+          lineHeight: "1.6",
+          color: "var(--text-1)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}>
+          {content}<span className="streaming-cursor" />
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
@@ -475,8 +503,14 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
   const displayTitle = title ?? "Acme Engineering Assistant";
   const displayQuestions =
     exampleQuestions && exampleQuestions.length > 0 ? exampleQuestions : STARTER_QUESTIONS;
@@ -502,33 +536,79 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
+    setStreamingContent("");
+
+    let accumulated = "";
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
         body: JSON.stringify({ message: text.trim(), history: buildHistory(), space }),
       });
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
 
-      const data = await res.json();
-      const answer: string = data.answer || "No answer returned.";
-      const sources: Source[] = data.sources || [];
-      const noInfo = answer.includes(NO_INFO_ANSWER);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      setMessages((prev) => [
-        ...prev,
-        { id: generateId(), role: "assistant", content: answer, sources, noInfo, question: text.trim() },
-      ]);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          let event: { type: string; text?: string; sources?: Source[]; answer?: string; message?: string };
+          try {
+            event = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
+          }
+
+          if (event.type === "token" && event.text) {
+            accumulated += event.text;
+            if (mountedRef.current) setStreamingContent(accumulated);
+          } else if (event.type === "done") {
+            const finalAnswer = accumulated || event.answer || "No answer returned.";
+            const sources: Source[] = event.sources ?? [];
+            const noInfo = finalAnswer.includes(NO_INFO_ANSWER);
+            if (mountedRef.current) {
+              setMessages((prev) => [
+                ...prev,
+                { id: generateId(), role: "assistant", content: finalAnswer, sources, noInfo, question: text.trim() },
+              ]);
+              setStreamingContent("");
+            }
+          } else if (event.type === "error") {
+            throw new Error(event.message ?? "Stream error");
+          }
+        }
+      }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { id: generateId(), role: "assistant", content: `Something went wrong: ${String(err)}`, noInfo: true },
-      ]);
+      if (mountedRef.current) {
+        const content = accumulated
+          ? `${accumulated}\n\nResponse interrupted. Please try again.`
+          : `Something went wrong: ${String(err)}`;
+        setMessages((prev) => [
+          ...prev,
+          { id: generateId(), role: "assistant", content, noInfo: !accumulated, question: text.trim() },
+        ]);
+        setStreamingContent("");
+      }
     } finally {
-      setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (mountedRef.current) {
+        setLoading(false);
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
     }
   }
 
@@ -663,7 +743,8 @@ export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps =
           )
         )}
 
-        {loading && <TypingIndicator />}
+        {loading && streamingContent === "" && <TypingIndicator />}
+        {streamingContent !== "" && <StreamingMessage content={streamingContent} />}
         <div ref={bottomRef} />
       </div>
 

@@ -277,14 +277,13 @@ function makeSnippet(content: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Step 6 — Generate answer with Gemini
+// Step 6 helpers — build chat session
 // ---------------------------------------------------------------------------
-async function generateAnswer(
-  query: string,
+function buildChatSession(
   contextRows: DbRow[],
   history: Message[],
-  isGlobal = false
-): Promise<string> {
+  isGlobal: boolean
+) {
   const contextText = contextRows
     .map((r, i) => {
       const teamLabel = SPACE_LABEL_MAP.get(r.space) ?? r.space;
@@ -309,21 +308,100 @@ ${contextText}`;
     systemInstruction: systemPrompt,
   });
 
-  // Build chat history for multi-turn context
   const historyForGemini = (history ?? []).map((m) => ({
     role: m.role === "user" ? "user" : "model",
     parts: [{ text: m.content }],
   }));
 
-  const chat = model.startChat({ history: historyForGemini });
+  return model.startChat({ history: historyForGemini });
+}
+
+// ---------------------------------------------------------------------------
+// Step 6a — Generate answer (non-streaming)
+// ---------------------------------------------------------------------------
+async function generateAnswer(
+  query: string,
+  contextRows: DbRow[],
+  history: Message[],
+  isGlobal = false
+): Promise<string> {
+  const chat = buildChatSession(contextRows, history, isGlobal);
   const result = await chat.sendMessage(query);
   return result.response.text();
 }
 
 // ---------------------------------------------------------------------------
+// Step 6b — Generate answer (streaming)
+// ---------------------------------------------------------------------------
+async function* generateAnswerStream(
+  query: string,
+  contextRows: DbRow[],
+  history: Message[],
+  isGlobal = false
+): AsyncGenerator<string> {
+  const chat = buildChatSession(contextRows, history, isGlobal);
+  const result = await chat.sendMessageStream(query);
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Source builder helper
+// ---------------------------------------------------------------------------
+function buildSources(topRows: DbRow[]): Source[] {
+  const seenUrls = new Set<string>();
+  const sources: Source[] = [];
+  for (const row of topRows) {
+    if (row.url && !seenUrls.has(row.url)) {
+      seenUrls.add(row.url);
+      sources.push({
+        title: row.title,
+        url: row.url,
+        source_type: row.source_type,
+        snippet: makeSnippet(row.content),
+      });
+    }
+  }
+  return sources;
+}
+
+// ---------------------------------------------------------------------------
+// SSE encoder helper
+// ---------------------------------------------------------------------------
+const enc = new TextEncoder();
+function sseEvent(data: object): Uint8Array {
+  return enc.encode(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+// ---------------------------------------------------------------------------
+// Shared pipeline (steps 1–5)
+// ---------------------------------------------------------------------------
+async function runPipeline(
+  message: string,
+  history: Message[],
+  space: string | undefined
+): Promise<{ topRows: DbRow[]; isGlobal: boolean } | { noInfo: true }> {
+  const rewrittenQuery = await rewriteQuery(message, history);
+  const embedding = await embedQuery(rewrittenQuery);
+  const searchRows = await hybridSearch(rewrittenQuery, embedding, space);
+
+  if (searchRows.length === 0) return { noInfo: true };
+
+  const { rows: rerankedRows, scores } = await rerank(rewrittenQuery, searchRows);
+  const topRows = filterByThreshold(rerankedRows, scores);
+
+  if (topRows.length === 0) return { noInfo: true };
+
+  const isGlobal = typeof space !== "string" || space.length === 0;
+  return { topRows, isGlobal };
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/chat
 // ---------------------------------------------------------------------------
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<Response> {
   let body: RequestBody;
   try {
     body = await req.json();
@@ -337,56 +415,66 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
 
+  const wantsSSE = req.headers.get("Accept") === "text/event-stream";
+
+  // ---------------------------------------------------------------------------
+  // SSE streaming path
+  // ---------------------------------------------------------------------------
+  if (wantsSSE) {
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const result = await runPipeline(message, history, space);
+
+          if ("noInfo" in result) {
+            controller.enqueue(sseEvent({ type: "done", answer: "I don't have information about this.", sources: [] }));
+            controller.close();
+            return;
+          }
+
+          const { topRows, isGlobal } = result;
+          const sources = buildSources(topRows);
+
+          for await (const text of generateAnswerStream(message, topRows, history, isGlobal)) {
+            controller.enqueue(sseEvent({ type: "token", text }));
+          }
+
+          controller.enqueue(sseEvent({ type: "done", sources }));
+          controller.close();
+        } catch (err) {
+          console.error("SSE stream error:", err);
+          try {
+            controller.enqueue(sseEvent({ type: "error", message: String(err) }));
+            controller.close();
+          } catch {
+            // controller may already be closed
+          }
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Non-streaming path (unchanged)
+  // ---------------------------------------------------------------------------
   try {
-    // 1. Rewrite query for better retrieval (uses conversation context)
-    const rewrittenQuery = await rewriteQuery(message, history);
+    const result = await runPipeline(message, history, space);
 
-    // 2. Embed the rewritten query
-    const embedding = await embedQuery(rewrittenQuery);
-
-    // 3. Hybrid search (BM25 + vector with RRF), optionally scoped to a team space
-    const searchRows = await hybridSearch(rewrittenQuery, embedding, space);
-
-    if (searchRows.length === 0) {
-      return NextResponse.json({
-        answer:
-          "I don't have information about this.",
-        sources: [],
-      });
+    if ("noInfo" in result) {
+      return NextResponse.json({ answer: "I don't have information about this.", sources: [] });
     }
 
-    // 4. Rerank
-    const { rows: rerankedRows, scores } = await rerank(rewrittenQuery, searchRows);
-
-    // 5. Threshold filter
-    const topRows = filterByThreshold(rerankedRows, scores);
-
-    if (topRows.length === 0) {
-      return NextResponse.json({
-        answer:
-          "I don't have information about this.",
-        sources: [],
-      });
-    }
-
-    // 6. Generate answer (isGlobal = true when no space filter was applied)
-    const isGlobal = typeof space !== "string" || space.length === 0;
+    const { topRows, isGlobal } = result;
     const answer = await generateAnswer(message, topRows, history, isGlobal);
-
-    // Build deduplicated sources list
-    const seenUrls = new Set<string>();
-    const sources: Source[] = [];
-    for (const row of topRows) {
-      if (row.url && !seenUrls.has(row.url)) {
-        seenUrls.add(row.url);
-        sources.push({
-          title: row.title,
-          url: row.url,
-          source_type: row.source_type,
-          snippet: makeSnippet(row.content),
-        });
-      }
-    }
+    const sources = buildSources(topRows);
 
     return NextResponse.json({ answer, sources });
   } catch (err) {
