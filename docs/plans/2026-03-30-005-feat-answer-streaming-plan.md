@@ -1,7 +1,7 @@
 ---
 title: "feat: Stream Gemini answers via SSE"
 type: feat
-status: active
+status: completed
 date: 2026-03-30
 origin: docs/brainstorms/2026-03-30-answer-streaming-requirements.md
 ---
