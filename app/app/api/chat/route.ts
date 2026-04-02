@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import pool from "@/lib/db";
 import { TEAMS } from "@/lib/teams";
+import { genai } from "@/lib/gemini";
 
 // Map space values (e.g. "CI-CD") to human-readable team labels (e.g. "CI/CD")
 const SPACE_LABEL_MAP = new Map(TEAMS.map((t) => [t.space, t.label]));
@@ -14,8 +14,6 @@ const EMBED_MODEL = "gemini-embedding-001";
 const EMBED_DIM = 768;
 const RERANKER_URL = process.env.RERANKER_URL || "http://localhost:8000";
 const RERANK_THRESHOLD = 0.3;
-
-const genai = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // ---------------------------------------------------------------------------
 // Types

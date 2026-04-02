@@ -90,6 +90,31 @@ export default function Sidebar() {
           description="Ask across all knowledge bases"
           active={pathname === "/search"}
         />
+
+        <div style={{
+          height: "1px",
+          background: "var(--border)",
+          margin: "4px 8px",
+        }} />
+
+        <div style={{
+          padding: "8px 16px 4px",
+          fontFamily: "var(--sans)",
+          fontSize: "10px",
+          fontWeight: 600,
+          color: "var(--text-3)",
+          textTransform: "uppercase" as const,
+          letterSpacing: "0.08em",
+        }}>
+          Tools
+        </div>
+
+        <NavItem
+          href="/jenkins-debug"
+          label="Jenkins Debugger"
+          description="Diagnose CI/CD build failures"
+          active={pathname === "/jenkins-debug"}
+        />
       </div>
 
       {/* Footer */}
