@@ -217,7 +217,7 @@ export default function JenkinsDebugUI() {
                 color: "var(--text-3)",
                 margin: 0,
               }}>
-                Fetching logs, comparing with last successful build. Up to 60s.
+                Fetching logs, comparing with last successful build, searching knowledge base. Up to 60s.
               </p>
             </div>
           </div>
@@ -323,6 +323,64 @@ function DiagnosisCard({ result }: { result: DiagnosisResult }) {
           {formatAnalysis(result.analysis)}
         </div>
       </div>
+
+      {/* KB sources */}
+      {result.sources && result.sources.length > 0 && (
+        <div style={{
+          padding: "20px 24px",
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "12px",
+        }}>
+          <p style={{
+            fontFamily: "var(--sans)",
+            fontSize: "12px",
+            fontWeight: 600,
+            color: "var(--text-3)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            margin: "0 0 12px",
+          }}>
+            Related Knowledge Base Pages
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {result.sources.map((src, i) => (
+              <a
+                key={i}
+                href={src.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "block",
+                  padding: "10px 14px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  textDecoration: "none",
+                }}
+              >
+                <div style={{
+                  fontFamily: "var(--sans)",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  color: "var(--blue)",
+                  marginBottom: "4px",
+                }}>
+                  {src.title}
+                </div>
+                <div style={{
+                  fontFamily: "var(--sans)",
+                  fontSize: "12px",
+                  color: "var(--text-2)",
+                  lineHeight: 1.5,
+                }}>
+                  {src.snippet}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Job URL */}
       <p style={{

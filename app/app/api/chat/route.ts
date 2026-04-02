@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
 import { TEAMS } from "@/lib/teams";
 import { genai } from "@/lib/gemini";
+import {
+  DbRow,
+  embedQuery,
+  hybridSearch,
+  rerank,
+  filterByThreshold,
+  makeSnippet,
+} from "@/lib/rag";
 
 // Map space values (e.g. "CI-CD") to human-readable team labels (e.g. "CI/CD")
 const SPACE_LABEL_MAP = new Map(TEAMS.map((t) => [t.space, t.label]));
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const EMBED_MODEL = "gemini-embedding-001";
-const EMBED_DIM = 768;
-const RERANKER_URL = process.env.RERANKER_URL || "http://localhost:8000";
-const RERANK_THRESHOLD = 0.3;
-
-// ---------------------------------------------------------------------------
-// Types
+// Types (chat-specific)
 // ---------------------------------------------------------------------------
 interface Message {
   role: "user" | "assistant";
@@ -29,22 +27,6 @@ interface RequestBody {
   space?: string;
 }
 
-interface DbRow {
-  id: number;
-  title: string;
-  content: string;
-  url: string;
-  source_type: string;
-  space: string;
-  rrf_score: number;
-}
-
-interface RankedChunk {
-  chunk_id: number;
-  score: number;
-  text: string;
-}
-
 interface Source {
   title: string;
   url: string;
@@ -53,7 +35,7 @@ interface Source {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — Query rewriting
+// Step 1 — Query rewriting (chat-specific: uses conversation history)
 // ---------------------------------------------------------------------------
 async function rewriteQuery(
   message: string,
@@ -63,7 +45,7 @@ async function rewriteQuery(
     return message;
   }
 
-  const recentHistory = history.slice(-6); // last 3 turns (user + assistant each)
+  const recentHistory = history.slice(-6);
   const historyText = recentHistory
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
     .join("\n");
@@ -81,197 +63,6 @@ Standalone search query:`;
   const result = await model.generateContent(prompt);
   const rewritten = result.response.text().trim();
   return rewritten || message;
-}
-
-// ---------------------------------------------------------------------------
-// Step 2 — Embed query via Gemini REST API
-// ---------------------------------------------------------------------------
-async function embedQuery(text: string): Promise<number[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${GEMINI_API_KEY}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: `models/${EMBED_MODEL}`,
-      content: { parts: [{ text }] },
-      outputDimensionality: EMBED_DIM,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini embed API error: ${response.status} ${err}`);
-  }
-
-  const data = await response.json();
-  const embedding: number[] = data?.embedding?.values;
-
-  if (!embedding || embedding.length !== EMBED_DIM) {
-    throw new Error(
-      `Unexpected embedding dimension: ${embedding?.length} (expected ${EMBED_DIM})`
-    );
-  }
-
-  return embedding;
-}
-
-// ---------------------------------------------------------------------------
-// Step 3 — Hybrid search with RRF (BM25 + vector)
-// ---------------------------------------------------------------------------
-async function hybridSearch(query: string, embedding: number[], space?: string): Promise<DbRow[]> {
-  // Format the vector as a Postgres literal: '[0.1, 0.2, ...]'
-  const vectorLiteral = `[${embedding.join(",")}]`;
-
-  const useSpaceFilter = typeof space === "string" && space.length > 0;
-
-  // Two distinct SQL strings — space filter is applied inside both CTEs (before RRF ranking).
-  // space is always passed as a positional parameter ($3), never interpolated.
-  const sqlWithSpace = `
-    WITH bm25_results AS (
-      SELECT id,
-             paradedb.score(id) AS bm25_score,
-             ROW_NUMBER() OVER (ORDER BY paradedb.score(id) DESC) AS bm25_rank
-      FROM documents
-      WHERE documents @@@ paradedb.parse($1)
-        AND space = $3
-      LIMIT 50
-    ),
-    vector_results AS (
-      SELECT id,
-             1 - (embedding <=> $2::vector) AS vec_score,
-             ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS vec_rank
-      FROM documents
-      WHERE space = $3
-      ORDER BY embedding <=> $2::vector
-      LIMIT 50
-    ),
-    rrf AS (
-      SELECT COALESCE(b.id, v.id) AS id,
-             COALESCE(1.0 / (60 + b.bm25_rank), 0) +
-             COALESCE(1.0 / (60 + v.vec_rank), 0) AS rrf_score
-      FROM bm25_results b
-      FULL JOIN vector_results v ON b.id = v.id
-    )
-    SELECT d.id, d.title, d.content, d.url, d.source_type, d.space, r.rrf_score
-    FROM rrf r
-    JOIN documents d ON d.id = r.id
-    ORDER BY r.rrf_score DESC
-    LIMIT 30
-  `;
-
-  const sqlWithoutSpace = `
-    WITH bm25_results AS (
-      SELECT id,
-             paradedb.score(id) AS bm25_score,
-             ROW_NUMBER() OVER (ORDER BY paradedb.score(id) DESC) AS bm25_rank
-      FROM documents
-      WHERE documents @@@ paradedb.parse($1)
-      LIMIT 50
-    ),
-    vector_results AS (
-      SELECT id,
-             1 - (embedding <=> $2::vector) AS vec_score,
-             ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS vec_rank
-      FROM documents
-      ORDER BY embedding <=> $2::vector
-      LIMIT 50
-    ),
-    rrf AS (
-      SELECT COALESCE(b.id, v.id) AS id,
-             COALESCE(1.0 / (60 + b.bm25_rank), 0) +
-             COALESCE(1.0 / (60 + v.vec_rank), 0) AS rrf_score
-      FROM bm25_results b
-      FULL JOIN vector_results v ON b.id = v.id
-    )
-    SELECT d.id, d.title, d.content, d.url, d.source_type, d.space, r.rrf_score
-    FROM rrf r
-    JOIN documents d ON d.id = r.id
-    ORDER BY r.rrf_score DESC
-    LIMIT 30
-  `;
-
-  const client = await pool.connect();
-  try {
-    const result = useSpaceFilter
-      ? await client.query(sqlWithSpace, [query, vectorLiteral, space])
-      : await client.query(sqlWithoutSpace, [query, vectorLiteral]);
-    return result.rows as DbRow[];
-  } finally {
-    client.release();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Step 4 — Reranker call (with RRF fallback)
-// ---------------------------------------------------------------------------
-async function rerank(
-  query: string,
-  rows: DbRow[]
-): Promise<{ rows: DbRow[]; scores: Map<number, number> }> {
-  const chunks = rows.map((r) => ({ id: r.id, text: r.content }));
-  const scores = new Map<number, number>();
-
-  try {
-    const response = await fetch(`${RERANKER_URL}/rerank`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, chunks }),
-      // 3-second timeout
-      signal: AbortSignal.timeout(3000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Reranker returned ${response.status}`);
-    }
-
-    const data = await response.json();
-    const results: RankedChunk[] = data.results;
-
-    // Build score map and reorder rows by reranker rank
-    for (const r of results) {
-      scores.set(r.chunk_id, r.score);
-    }
-
-    const rerankedRows = results
-      .map((r) => rows.find((row) => row.id === r.chunk_id)!)
-      .filter(Boolean);
-
-    return { rows: rerankedRows, scores };
-  } catch (_err) {
-    // Reranker unavailable — fall back to top 6 by RRF score
-    console.warn("Reranker unavailable, falling back to RRF order");
-    const fallbackRows = rows.slice(0, 6);
-    for (const row of fallbackRows) {
-      scores.set(row.id, 0); // no cross-encoder score available
-    }
-    return { rows: fallbackRows, scores };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Step 5 — Score threshold filter
-// ---------------------------------------------------------------------------
-function filterByThreshold(
-  rows: DbRow[],
-  scores: Map<number, number>
-): DbRow[] {
-  // Only apply threshold if we have real cross-encoder scores (not zeros from fallback)
-  const hasCrossEncoderScores = [...scores.values()].some((s) => s !== 0);
-  if (!hasCrossEncoderScores) {
-    return rows.slice(0, 6);
-  }
-  return rows.filter((r) => (scores.get(r.id) ?? 0) >= RERANK_THRESHOLD).slice(0, 6);
-}
-
-// ---------------------------------------------------------------------------
-// Snippet helper — first ~200 chars trimmed to word boundary
-// ---------------------------------------------------------------------------
-function makeSnippet(content: string): string {
-  const raw = (content ?? "").slice(0, 220);
-  if (raw.length < 220) return raw;
-  const lastSpace = raw.lastIndexOf(" ", 200);
-  return lastSpace > 0 ? raw.slice(0, lastSpace) : raw.slice(0, 200);
 }
 
 // ---------------------------------------------------------------------------

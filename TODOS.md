@@ -12,7 +12,7 @@
 
 ## Sprint 2 prerequisites
 
-### Extract RAG pipeline from chat/route.ts into lib/rag.ts
+### ~~Extract RAG pipeline from chat/route.ts into lib/rag.ts~~ ✓ Done
 **What:** Extract `hybridSearch()`, `embedQuery()`, `rerank()`, and `rewriteQuery()` from `app/api/chat/route.ts` into `app/lib/rag.ts` as callable, exported functions.
 **Why:** Sprint 2 requires exposing `search_knowledge_base` as a Gemini function tool in the Jenkins debug agent. Today the RAG logic is ~400 lines of procedural code inline in the chat route — it can't be called as a module. This extraction is Sprint 2's biggest prerequisite.
 **How:** Move functions to lib/rag.ts, re-import in chat/route.ts, expose as tool executor in jenkins-tools.ts.

@@ -4,11 +4,18 @@ import { FunctionDeclaration, SchemaType } from "@google/generative-ai";
 // Shared result type — returned by POST /api/jenkins-debug
 // ---------------------------------------------------------------------------
 
+export interface KbSource {
+  url: string;
+  title: string;
+  snippet: string;
+}
+
 export interface DiagnosisResult {
   jobUrl: string;
   buildNumber: number;
   failedStage?: string;
   analysis: string;     // Full Gemini diagnosis text
+  sources: KbSource[];  // Knowledge base results cited by the agent (Sprint 2+)
   turnsUsed: number;
   partial: boolean;     // true if max turns hit or total timeout reached
 }
@@ -104,6 +111,35 @@ export const JENKINS_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         },
       },
       required: ["job_base_url", "build_number"],
+    },
+  },
+  {
+    name: "search_knowledge_base",
+    description:
+      "Search the internal Confluence and Jira knowledge base for documentation, runbooks, " +
+      "or past incidents related to this failure. " +
+      "Use this after identifying the root cause to find known solutions, runbooks, or " +
+      "Jira tickets where teammates solved the same problem before. " +
+      "Returns the most relevant pages with URLs and snippets.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        query: {
+          type: SchemaType.STRING,
+          description:
+            "Search query describing the problem. Be specific — include the error type, " +
+            "tool name, and symptom. " +
+            "Example: 'ECR registry credentials expired image pull unauthorized' or " +
+            "'Jenkins worker disk space full cleanup'",
+        },
+        spaces: {
+          type: SchemaType.STRING,
+          description:
+            "Optional: comma-separated list of knowledge base spaces to search. " +
+            "Examples: 'CI-CD', 'INFRA', 'CI-CD,INFRA'. Leave empty to search all spaces.",
+        },
+      },
+      required: ["query"],
     },
   },
 ];

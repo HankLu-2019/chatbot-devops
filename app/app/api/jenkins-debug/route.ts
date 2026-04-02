@@ -12,9 +12,11 @@ import {
 import {
   JENKINS_FUNCTION_DECLARATIONS,
   DiagnosisResult,
+  KbSource,
   detectFailedStage,
   prepareLogContext,
 } from "@/lib/jenkins-tools";
+import { searchKnowledgeBase } from "@/lib/rag";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,7 +75,8 @@ export async function POST(req: NextRequest) {
   const model = genai.getGenerativeModel({
     model: "gemini-2.5-flash",
     tools: [{ functionDeclarations: JENKINS_FUNCTION_DECLARATIONS }],
-    systemInstruction: `You are a Jenkins build failure analyst. You have read-only access to Jenkins via tools.
+    systemInstruction: `You are a Jenkins build failure analyst for Acme Engineering.
+You have read-only access to Jenkins and can search the internal Confluence/Jira knowledge base.
 
 When given a Jenkins build URL:
 1. Call get_job_status to confirm the build failed and get the build number.
@@ -84,9 +87,13 @@ When given a Jenkins build URL:
    - If the response says no baseline exists, skip step 4 and diagnose from the failed log only.
 4. Call get_build_log for the baseline build, passing the failed stage name as stage_name.
 5. Compare the two logs — what changed? Focus on the error line and the 10 lines above it.
-6. Write your diagnosis in exactly this format:
+6. Call search_knowledge_base with a query describing the root cause you identified.
+   - This finds runbooks, past incidents, and known solutions from Confluence and Jira.
+   - Use it even for common failures — teammates may have documented the exact steps.
+   - If search returns relevant results, cite them in your fix recommendation.
+7. Write your diagnosis in exactly this format:
    ROOT CAUSE: <one sentence>
-   FIX: <one sentence>
+   FIX: <one sentence, including reference to any relevant KB page if found>
 
 To extract the job base URL from a URL like https://jenkins.acme.com/job/payment-service/123:
 - Job base URL = https://jenkins.acme.com/job/payment-service  (strip the build number)
@@ -105,6 +112,7 @@ Do not suggest fixes that require write access to Jenkins.`,
   // State shared across tool executions within this request
   let detectedStage: string | undefined;
   let baselineLog: string | null = null;
+  const collectedSources: KbSource[] = [];
 
   // Tool executor: runs one named tool call and returns its result as an object
   async function executeTool(
@@ -209,6 +217,51 @@ Do not suggest fixes that require write access to Jenkins.`,
           };
         } catch (err) {
           return { error: jenkinsErrorMessage(err, `${jobBase}/${buildNum}`) };
+        }
+      }
+
+      case "search_knowledge_base": {
+        const query = String(args.query ?? "").trim();
+        if (!query) return { results: [], note: "Empty query — nothing searched." };
+
+        // spaces arg comes as a comma-separated string from the model
+        const spacesRaw = typeof args.spaces === "string" ? args.spaces : "";
+        const spaces = spacesRaw
+          ? spacesRaw.split(",").map((s: string) => s.trim()).filter(Boolean)
+          : undefined;
+
+        try {
+          const results = await searchKnowledgeBase(query, spaces);
+
+          // Accumulate sources for the final DiagnosisResult
+          for (const r of results) {
+            if (!collectedSources.some((s) => s.url === r.url)) {
+              collectedSources.push({ url: r.url, title: r.title, snippet: r.snippet });
+            }
+          }
+
+          if (results.length === 0) {
+            return {
+              results: [],
+              note: "No relevant pages found in the knowledge base for this query.",
+            };
+          }
+
+          return {
+            results: results.map((r) => ({
+              url: r.url,
+              title: r.title,
+              snippet: r.snippet,
+              score: r.score,
+            })),
+          };
+        } catch (err) {
+          // KB search failure is non-fatal — agent continues without KB results
+          const msg = err instanceof Error ? err.message : String(err);
+          return {
+            results: [],
+            note: `Knowledge base search unavailable: ${msg}. Continue diagnosis without KB.`,
+          };
         }
       }
 
@@ -334,6 +387,7 @@ Do not suggest fixes that require write access to Jenkins.`,
     buildNumber: finalBuildNumber ?? 0,
     failedStage: finalFailedStage ?? detectedStage,
     analysis: finalAnalysis,
+    sources: collectedSources,
     turnsUsed,
     partial,
   };
