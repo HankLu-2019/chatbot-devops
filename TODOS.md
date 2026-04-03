@@ -2,11 +2,8 @@
 
 ## Sprint 1 follow-up
 
-### Add truncation indicator to Jenkins log tool responses
-**What:** Append a note to the log string when `max_lines` truncation is applied.
-**Why:** Without it, Gemini reasons on what it thinks is a complete log and may produce confidently wrong diagnoses when the root cause is in an early section that was trimmed.
-**How:** In `lib/jenkins.ts`, after truncating to last N lines, append: `\n[Note: log truncated to last {N} lines. Full log may contain earlier context.]`
-**Depends on:** Sprint 1 jenkins.ts implementation
+### ~~Add truncation indicator to Jenkins log tool responses~~ ✓ Done
+**Implemented in `lib/jenkins.ts:160-164`** — appends `[Note: log truncated to last {N} lines. Full log was {M} lines — earlier context may have been omitted.]` when trimming occurs.
 
 ---
 
