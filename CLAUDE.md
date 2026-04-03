@@ -54,9 +54,9 @@ cd ingestion && pip install -r requirements.txt && python ingest.py
 
 1. Query rewriting — Gemini Flash converts multi-turn history to standalone query
 2. Embedding — `gemini-embedding-001` produces 768-dim vector
-3. Hybrid search — BM25 (`pg_search`) + vector (`pgvector`) fused with RRF, top-30 results
-4. Reranking — cross-encoder sidecar scores top-30, returns top-6
-5. Threshold filter — scores below 0.3 trigger "I don't have information" response
+3. Hybrid search — BM25 (`pg_search`) + vector (`pgvector`), min-max normalized and alpha-blended (`SEARCH_ALPHA=0.7`), with time-decay on `updated_at`; top-30 results
+4. Reranking — cross-encoder sidecar scores top-30, returns top-N
+5. Context assembly — token budget (6000 tok) greedily accumulates chunks by cross-encoder score; hard cap 8 chunks
 6. Generation — Gemini Flash generates answer streamed via SSE
 7. Response — answer + source citations (URL + snippet)
 
@@ -77,7 +77,8 @@ To add a team: add an entry to `TEAMS` in `app/lib/teams.ts` and tag data with t
 
 ### Key Files
 
-- `app/app/api/chat/route.ts` — Entire RAG pipeline (embed → search → rerank → generate → stream)
+- `app/app/api/chat/route.ts` — Chat pipeline (rewrite → embed → search → rerank → assemble → generate → stream)
+- `app/lib/rag.ts` — Shared RAG functions: `hybridSearch` (alpha-blend + decay), `assembleByBudget`, `searchKnowledgeBase`
 - `app/app/api/feedback/route.ts` — Thumbs up/down persistence to DB
 - `app/components/ChatUI.tsx` — Chat interface (streaming, feedback, source peek)
 - `app/components/Sidebar.tsx` — Persistent nav with team links

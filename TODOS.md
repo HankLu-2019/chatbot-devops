@@ -9,6 +9,23 @@
 
 ## Sprint 2 prerequisites
 
+### ~~Onyx-inspired RAG improvements (scoring + context assembly)~~ ✓ Done
+**Implemented in `lib/rag.ts`** — normalized alpha-blend scoring, time-decay on `updated_at`, token budget-driven `assembleByBudget` replacing `filterByThreshold`.
+
+---
+
+## Future: Onyx-inspired improvements (deferred)
+
+### Token-aware chunking in ingestion
+**What:** Subtract metadata/title token cost upfront before allocating content space in `ingestion/chunker.py`. Add a token budget check to avoid chunks silently exceeding `text-embedding-004`'s 2048-token input limit.
+**Why:** Current chunker splits on structure (headers, paragraphs) but doesn't guard against embedding model window overflow. Large sections may be silently truncated by the embedding API.
+**How:** Add `count_tokens(text)` estimate (len/4), enforce `MAX_CHUNK_TOKENS = 1800` per chunk, recursively split oversized chunks.
+**Depends on:** Nothing — can be done any time before next ingestion run.
+
+---
+
+## Sprint 2 prerequisites
+
 ### ~~Extract RAG pipeline from chat/route.ts into lib/rag.ts~~ ✓ Done
 **What:** Extract `hybridSearch()`, `embedQuery()`, `rerank()`, and `rewriteQuery()` from `app/api/chat/route.ts` into `app/lib/rag.ts` as callable, exported functions.
 **Why:** Sprint 2 requires exposing `search_knowledge_base` as a Gemini function tool in the Jenkins debug agent. Today the RAG logic is ~400 lines of procedural code inline in the chat route — it can't be called as a module. This extraction is Sprint 2's biggest prerequisite.
