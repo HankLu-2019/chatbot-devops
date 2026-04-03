@@ -6,7 +6,7 @@ import {
   embedQuery,
   hybridSearch,
   rerank,
-  filterByThreshold,
+  assembleByBudget,
   makeSnippet,
 } from "@/lib/rag";
 
@@ -179,7 +179,7 @@ async function runPipeline(
   if (searchRows.length === 0) return { noInfo: true };
 
   const { rows: rerankedRows, scores } = await rerank(rewrittenQuery, searchRows);
-  const topRows = filterByThreshold(rerankedRows, scores);
+  const topRows = assembleByBudget(rerankedRows, scores);
 
   if (topRows.length === 0) return { noInfo: true };
 
