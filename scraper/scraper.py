@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -193,7 +194,6 @@ def scrape_jira_gap(
         issues = result["issues"]
         # Filter to ids <= to_id
         for i in issues:
-            import re
             m = re.search(r"-(\d+)$", i.get("key", ""))
             num = int(m.group(1)) if m else 0
             if num <= to_id:
@@ -203,7 +203,6 @@ def scrape_jira_gap(
             break
         # Check if all remaining are past to_id
         if issues and issues[-1]:
-            import re
             m = re.search(r"-(\d+)$", issues[-1].get("key", ""))
             if m and int(m.group(1)) >= to_id:
                 break
@@ -222,7 +221,6 @@ def scrape_jira_backfill(
     Fetch batch_size issues starting after `cursor` (issue number).
     Returns (issues, next_cursor). next_cursor is None when no more pages.
     """
-    import re
     result = client.search_issues(
         project,
         min_issue_number=cursor,
@@ -353,10 +351,10 @@ def run_once(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Acme RAG Scraper")
     parser.add_argument("--loop", action="store_true", help="Run continuously every N hours")
-    parser.add_argument("--data-dir", default=str(Path(__file__).parent.parent / "data"), help="Output data directory")
+    parser.add_argument("--data-dir", default=os.environ.get("DATA_DIR", str(Path(__file__).parent.parent / "data")), help="Output data directory")
     parser.add_argument("--config", default=str(_CONFIG_PATH), help="Config YAML path")
     parser.add_argument("--state", default=str(_STATE_PATH), help="State JSON path")
-    parser.add_argument("--mock-api-url", default="http://localhost:8001", help="Mock API base URL")
+    parser.add_argument("--mock-api-url", default=None, help="Base URL for Confluence+Jira API (overrides env vars)")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -366,14 +364,19 @@ def main() -> None:
     retry_delay = float(settings.get("retry_delay_seconds", 2.0))
     run_interval_hours = int(settings.get("run_interval_hours", 6))
 
+    # Resolve API URLs: CLI flag > env vars > localhost fallback
+    default_url = "http://localhost:8081"
+    confluence_url = args.mock_api_url or os.environ.get("CONFLUENCE_URL", default_url)
+    jira_url = args.mock_api_url or os.environ.get("JIRA_URL", default_url)
+
     confluence_client = ConfluenceClient(
-        base_url=args.mock_api_url,
+        base_url=confluence_url,
         delay=delay,
         max_retries=max_retries,
         retry_delay=retry_delay,
     )
     jira_client = JiraClient(
-        base_url=args.mock_api_url,
+        base_url=jira_url,
         delay=delay,
         max_retries=max_retries,
         retry_delay=retry_delay,
