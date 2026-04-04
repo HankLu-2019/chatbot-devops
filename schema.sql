@@ -40,3 +40,6 @@ CREATE TABLE IF NOT EXISTS feedback (
     question   TEXT NOT NULL,
     vote       TEXT NOT NULL CHECK (vote IN ('up', 'down'))
 );
+
+-- Index for Panel 6 "Recent Feedback" query: ORDER BY created_at DESC LIMIT 20
+CREATE INDEX IF NOT EXISTS feedback_created_at_idx ON feedback (created_at DESC);
