@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A RAG (Retrieval-Augmented Generation) chatbot for Acme Engineering's internal knowledge base. It provides team-scoped Q&A over Confluence pages, Jira tickets, and internal docs using hybrid search (BM25 + vector) with cross-encoder reranking.
 
+##
+   always use skill to do it, from requirement discuss, plan, plan review, coding, review, qa, etc, make throughly check make sure all changes are fully filled, and make code commit at last, ask users need to push or not.
+   
 ## Commands
 
 ### Frontend (Next.js, run from `app/`)

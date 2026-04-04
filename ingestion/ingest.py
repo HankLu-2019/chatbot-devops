@@ -10,6 +10,7 @@ Usage:
     python ingest.py
 """
 
+import argparse
 import json
 import os
 import sys
@@ -197,7 +198,24 @@ def load_doc_chunks() -> list[dict]:
 # Main
 # ---------------------------------------------------------------------------
 
+def clean_documents(conn) -> None:
+    """Delete all rows from the documents table (used before a full re-ingest)."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM documents")
+    conn.commit()
+    print("Cleaned: all existing documents deleted.\n")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Acme RAG Ingestion Pipeline")
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete all existing documents before ingesting (full re-ingest). "
+             "Use this after chunking logic changes that alter content_hash values.",
+    )
+    args = parser.parse_args()
+
     print("=== Acme RAG Ingestion Pipeline ===\n")
 
     # 1. Load all chunks
@@ -207,9 +225,11 @@ def main() -> None:
     all_chunks.extend(load_doc_chunks())
     print(f"\nTotal chunks to process: {len(all_chunks)}\n")
 
-    # 2. Connect to DB and find already-ingested hashes
+    # 2. Connect to DB; optionally wipe before re-ingesting
     print("Connecting to database ...")
     conn = get_connection()
+    if args.clean:
+        clean_documents(conn)
     existing_hashes = get_existing_hashes(conn)
     print(f"Found {len(existing_hashes)} existing chunks in DB.\n")
 
