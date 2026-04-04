@@ -1,0 +1,30 @@
+teams:
+  - name: CI/CD
+    space: CI-CD
+    confluence:
+      parent_ids: [10001, 10002, 10003]
+    jira:
+      projects: [CICD]
+
+  - name: Infrastructure
+    space: INFRA
+    confluence:
+      parent_ids: [20001, 20002]
+    jira:
+      projects: [INFRA]
+
+  - name: Engineering Environment
+    space: ENG-ENV
+    confluence:
+      parent_ids: [30001]
+    jira:
+      projects: [ENGENV]
+
+settings:
+  look_back_hours: 24 # incremental window
+  run_interval_hours: 6 # sleep between runs
+  backfill_batch_size: 50 # items per backfill batch per run
+  backfill_days: 7 # spread backfill over N days
+  request_delay_seconds: 0.5 # delay between paginated requests
+  max_retries: 3
+  retry_delay_seconds: 2.0
