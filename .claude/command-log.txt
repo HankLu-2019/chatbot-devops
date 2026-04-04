@@ -1,0 +1,9 @@
+2026-04-04T15:43:09+02:00 docker-compose up -d 2>&1
+2026-04-04T15:43:29+02:00 docker-compose up -d --build mock-jenkins 2>&1
+2026-04-04T15:43:34+02:00 docker rm -f mock-jenkins 2>/dev/null; docker-compose up -d 2>&1
+2026-04-04T15:43:38+02:00 docker ps -a --filter name=jenkins --format "{{.ID}} {{.Names}}" && docker rm -f $(docker ps -a --filter name=jenkins -q) 2>/dev/null; docker-compose up -d 2>&1
+2026-04-04T15:43:56+02:00 docker-compose ps && echo "---" && docker-compose logs app 2>&1 | tail -5
+2026-04-04T15:44:03+02:00 grep -n "TODO\|FIXME\|HACK\|todo\|fixme" /home/lv/source/2026/RAG_Chatbot/CLAUDE.md 2>/dev/null; echo "---branch---"; git -C /home/lv/source/2026/RAG_Chatbot log --oneline main..HEAD 2>/dev/null; echo "---TODOs in code---"; grep -rn "TODO\|FIXME\|HACK" /home/lv/source/2026/RAG_Chatbot/app /home/lv/source/2026/RAG_Chatbot/ingestion /home/lv/source/2026/RAG_Chatbot/reranker --include="*.ts" --include="*.tsx" --include="*.py" 2>/dev/null | grep -v node_modules
+2026-04-04T15:44:10+02:00 grep -n "TODO\|FIXME\|\- \[ \]" /home/lv/source/2026/RAG_Chatbot/CLAUDE.md
+2026-04-04T15:44:13+02:00 ls /home/lv/source/2026/RAG_Chatbot/.claude/ 2>/dev/null && find /home/lv/source/2026/RAG_Chatbot/.claude -name "*.md" | head -20
+2026-04-04T15:44:16+02:00 git -C /home/lv/source/2026/RAG_Chatbot diff main...HEAD --stat 2>/dev/null | head -30
