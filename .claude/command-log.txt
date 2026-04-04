@@ -325,3 +325,68 @@ echo "ROUTING_DECLINED: $_ROUTING_DECLINED"
 2026-04-04T17:37:50+02:00 git rev-parse --abbrev-ref HEAD
 2026-04-04T17:38:20+02:00 mkdir -p /home/lv/source/2026/RAG_Chatbot/grafana/provisioning/datasources /home/lv/source/2026/RAG_Chatbot/grafana/provisioning/dashboards /home/lv/source/2026/RAG_Chatbot/scripts
 2026-04-04T17:40:28+02:00 which jq && jq --version
+2026-04-04T17:40:38+02:00 git diff HEAD
+2026-04-04T17:41:03+02:00 find /home/lv/source/2026/RAG_Chatbot -type f -name "*.yml" -o -name "*.yaml" | head -20
+2026-04-04T17:41:06+02:00 find /home/lv/source/2026/RAG_Chatbot -maxdepth 3 -type f \( -name "*.yml" -o -name "*.yaml" -o -name "docker-compose*" \) ! -path "*/node_modules/*" | sort
+2026-04-04T17:41:10+02:00 find /home/lv/source/2026/RAG_Chatbot -maxdepth 3 -type f -name "*.sql" ! -path "*/node_modules/*" | sort
+2026-04-04T17:41:10+02:00 find /home/lv/source/2026/RAG_Chatbot -path "*/grafana/*" -type f ! -path "*/node_modules/*" | sort
+2026-04-04T17:41:18+02:00 grep -r "postgres" /home/lv/source/2026/RAG_Chatbot --include="*.yml" --include="*.yaml" --include="*.js" --include="*.ts" --include="*.env*" 2>/dev/null | grep -v node_modules | head -20
+2026-04-04T17:41:21+02:00 ls -la /home/lv/source/2026/RAG_Chatbot/grafana/provisioning/
+2026-04-04T17:41:21+02:00 find /home/lv/source/2026/RAG_Chatbot/grafana -type f
+2026-04-04T17:41:24+02:00 grep -o '"id": [0-9]*' /home/lv/source/2026/RAG_Chatbot/grafana/provisioning/dashboards/feedback.json | wc -l
+2026-04-04T17:41:25+02:00 find /home/lv/source/2026/RAG_Chatbot -type f -name "*.sql" -o -name "*.json" -o -name "docker-compose*" -o -name "grafana*" | head -30
+2026-04-04T17:41:29+02:00 grep -n "postgresVersion\|pg17\|paradedb" /home/lv/source/2026/RAG_Chatbot/docker-compose.yml
+2026-04-04T17:41:31+02:00 grep -o "FROM feedback" /home/lv/source/2026/RAG_Chatbot/grafana/provisioning/dashboards/feedback.json
+2026-04-04T17:41:31+02:00 find /home/lv/source/2026/RAG_Chatbot/grafana -type f -name "*.json" 2>/dev/null | head -20
+2026-04-04T17:41:34+02:00 wc -l /home/lv/source/2026/RAG_Chatbot/scripts/seed-feedback.sql
+2026-04-04T17:41:36+02:00 grep -r "feedback" /home/lv/source/2026/RAG_Chatbot --include="*.py" --include="*.js" --include="*.ts" --include="*.sql" -l 2>/dev/null | head -10
+2026-04-04T17:41:38+02:00 find /home/lv/source/2026/RAG_Chatbot -path "*/node_modules" -prune -o -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" \) -print 2>/dev/null | head -20
+2026-04-04T17:41:39+02:00 grep -r "paradedb:5432\|postgres:postgres" /home/lv/source/2026/RAG_Chatbot --include="*.yml" --include="*.yaml" --include="*.ts" --include="*.js" 2>/dev/null | grep -v node_modules
+2026-04-04T17:41:39+02:00 grep -r "feedback" /home/lv/source/2026/RAG_Chatbot/app/lib --include="*.ts" -A 3 2>/dev/null
+2026-04-04T17:42:18+02:00 docker compose up -d grafana 2>&1 | tail -20
+2026-04-04T17:42:21+02:00 docker-compose up -d grafana 2>&1 | tail -20
+2026-04-04T17:42:33+02:00 sleep 5 && docker-compose logs grafana 2>&1 | tail -30
+2026-04-04T17:42:43+02:00 sleep 5 && docker-compose ps grafana 2>&1
+2026-04-04T17:42:51+02:00 curl -s http://localhost:3001/api/health 2>&1
+2026-04-04T17:42:54+02:00 python3 -c "import urllib.request; print(urllib.request.urlopen('http://localhost:3001/api/health').read().decode())"
+2026-04-04T17:42:57+02:00 docker exec -i paradedb psql -U postgres -d ragdb < /home/lv/source/2026/RAG_Chatbot/scripts/seed-feedback.sql 2>&1
+2026-04-04T17:43:02+02:00 python3 -c "import urllib.request; print(urllib.request.urlopen('http://localhost:3001/api/dashboards/uid/rag-feedback-v1').read().decode()[:500])"
+2026-04-04T17:43:22+02:00 python3 /tmp/qa_grafana.py
+2026-04-04T17:43:33+02:00 python3 /tmp/qa_grafana2.py
+2026-04-04T17:44:00+02:00 docker-compose up -d grafana 2>&1 | tail -5
+2026-04-04T17:44:03+02:00 docker rm -f grafana && docker-compose up -d grafana 2>&1 | tail -5
+2026-04-04T17:44:08+02:00 docker stop grafana 2>&1; docker rm grafana 2>&1
+2026-04-04T17:44:10+02:00 docker ps -a --filter name=grafana 2>&1
+2026-04-04T17:44:14+02:00 docker rm 2151adf6fc6b_grafana 2>&1 && docker run -d --name grafana -p 3001:3000 --network rag_chatbot_default -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer -e GF_AUTH_DISABLE_LOGIN_FORM=true -e GF_AUTH_BASIC_ENABLED=false -e GF_SECURITY_ALLOW_EMBEDDING=true -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/feedback.json -e GF_LOG_LEVEL=warn -v /home/lv/source/2026/RAG_Chatbot/grafana/provisioning:/etc/grafana/provisioning -v rag_chatbot_grafana_data:/var/lib/grafana grafana/grafana:11.6.0 2>&1
+2026-04-04T17:44:35+02:00 python3 /tmp/start_grafana.py
+2026-04-04T17:44:39+02:00 sleep 6 && python3 -c "import urllib.request; print(urllib.request.urlopen('http://localhost:3001/api/health').read().decode())"
+2026-04-04T17:44:48+02:00 python3 /tmp/qa_grafana2.py
+2026-04-04T17:45:05+02:00 python3 /tmp/qa_panels.py
+2026-04-04T17:45:31+02:00 git status
+2026-04-04T17:45:34+02:00 git status --short
+2026-04-04T17:45:37+02:00 git diff schema.sql
+2026-04-04T17:45:39+02:00 git log --oneline -3
+2026-04-04T17:45:43+02:00 git add schema.sql docker-compose.yml grafana/ scripts/ .gstack/qa-reports/qa-report-grafana-2026-04-04.md
+2026-04-04T17:45:46+02:00 git add schema.sql docker-compose.yml grafana/ scripts/
+2026-04-04T17:45:49+02:00 git diff --cached --stat
+2026-04-04T17:45:55+02:00 git log --oneline -5 && git diff HEAD~1 --stat
+2026-04-04T17:46:06+02:00 git log --oneline -6 && git diff HEAD~2 HEAD~1 --stat
+2026-04-04T17:46:09+02:00 git diff --cached && git status
+2026-04-04T17:46:15+02:00 git diff HEAD docker-compose.yml
+2026-04-04T17:46:21+02:00 grep "DASHBOARD" docker-compose.yml
+2026-04-04T17:46:33+02:00 git commit -m "$(cat <<'EOF'
+feat(grafana): feedback visualization dashboard on port 3001
+
+- Add Grafana 11.6.0 service to docker-compose with anonymous viewer access
+- Provision ParadeDB datasource (uid: paradedb-ds) auto-loaded on startup
+- Add 6-panel feedback dashboard (uid: rag-feedback-v1) as home page:
+  stat (total), gauge (helpfulness %), timeseries, barchart, bargauge, table
+- Add scripts/seed-feedback.sql: 45 rows across CI-CD/INFRA/ENG-ENV for dev/testing
+- Add feedback_created_at_idx on feedback(created_at DESC) for Panel 6 ORDER BY
+- QA verified: all panels query live data, home dashboard redirect working
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+EOF
+)"
+2026-04-04T17:46:42+02:00 git commit -F /tmp/commit_grafana.txt
+2026-04-04T17:46:49+02:00 git log --oneline -5
