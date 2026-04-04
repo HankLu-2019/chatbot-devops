@@ -3,3 +3,4 @@ google-genai
 python-dotenv
 beautifulsoup4
 pgvector
+pyyaml>=6.0
