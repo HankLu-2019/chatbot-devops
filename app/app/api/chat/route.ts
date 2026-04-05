@@ -25,6 +25,7 @@ interface RequestBody {
   message: string;
   history?: Message[];
   space?: string;
+  include_contexts?: boolean;
 }
 
 interface Source {
@@ -39,7 +40,7 @@ interface Source {
 // ---------------------------------------------------------------------------
 async function rewriteQuery(
   message: string,
-  history: Message[]
+  history: Message[],
 ): Promise<string> {
   if (!history || history.length === 0) {
     return message;
@@ -71,7 +72,7 @@ Standalone search query:`;
 function buildChatSession(
   contextRows: DbRow[],
   history: Message[],
-  isGlobal: boolean
+  isGlobal: boolean,
 ) {
   const contextText = contextRows
     .map((r, i) => {
@@ -112,7 +113,7 @@ async function generateAnswer(
   query: string,
   contextRows: DbRow[],
   history: Message[],
-  isGlobal = false
+  isGlobal = false,
 ): Promise<string> {
   const chat = buildChatSession(contextRows, history, isGlobal);
   const result = await chat.sendMessage(query);
@@ -126,7 +127,7 @@ async function* generateAnswerStream(
   query: string,
   contextRows: DbRow[],
   history: Message[],
-  isGlobal = false
+  isGlobal = false,
 ): AsyncGenerator<string> {
   const chat = buildChatSession(contextRows, history, isGlobal);
   const result = await chat.sendMessageStream(query);
@@ -170,7 +171,7 @@ function sseEvent(data: object): Uint8Array {
 async function runPipeline(
   message: string,
   history: Message[],
-  space: string | undefined
+  space: string | undefined,
 ): Promise<{ topRows: DbRow[]; isGlobal: boolean } | { noInfo: true }> {
   const rewrittenQuery = await rewriteQuery(message, history);
   const embedding = await embedQuery(rewrittenQuery);
@@ -178,7 +179,10 @@ async function runPipeline(
 
   if (searchRows.length === 0) return { noInfo: true };
 
-  const { rows: rerankedRows, scores } = await rerank(rewrittenQuery, searchRows);
+  const { rows: rerankedRows, scores } = await rerank(
+    rewrittenQuery,
+    searchRows,
+  );
   const topRows = assembleByBudget(rerankedRows, scores);
 
   if (topRows.length === 0) return { noInfo: true };
@@ -198,7 +202,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { message, history = [], space } = body;
+  const { message, history = [], space, include_contexts = false } = body;
 
   if (!message || typeof message !== "string" || !message.trim()) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
@@ -216,7 +220,13 @@ export async function POST(req: NextRequest): Promise<Response> {
           const result = await runPipeline(message, history, space);
 
           if ("noInfo" in result) {
-            controller.enqueue(sseEvent({ type: "done", answer: "I don't have information about this.", sources: [] }));
+            controller.enqueue(
+              sseEvent({
+                type: "done",
+                answer: "I don't have information about this.",
+                sources: [],
+              }),
+            );
             controller.close();
             return;
           }
@@ -224,7 +234,12 @@ export async function POST(req: NextRequest): Promise<Response> {
           const { topRows, isGlobal } = result;
           const sources = buildSources(topRows);
 
-          for await (const text of generateAnswerStream(message, topRows, history, isGlobal)) {
+          for await (const text of generateAnswerStream(
+            message,
+            topRows,
+            history,
+            isGlobal,
+          )) {
             controller.enqueue(sseEvent({ type: "token", text }));
           }
 
@@ -233,7 +248,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         } catch (err) {
           console.error("SSE stream error:", err);
           try {
-            controller.enqueue(sseEvent({ type: "error", message: String(err) }));
+            controller.enqueue(
+              sseEvent({ type: "error", message: String(err) }),
+            );
             controller.close();
           } catch {
             // controller may already be closed
@@ -246,7 +263,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
   }
@@ -258,19 +275,26 @@ export async function POST(req: NextRequest): Promise<Response> {
     const result = await runPipeline(message, history, space);
 
     if ("noInfo" in result) {
-      return NextResponse.json({ answer: "I don't have information about this.", sources: [] });
+      return NextResponse.json({
+        answer: "I don't have information about this.",
+        sources: [],
+      });
     }
 
     const { topRows, isGlobal } = result;
     const answer = await generateAnswer(message, topRows, history, isGlobal);
     const sources = buildSources(topRows);
 
-    return NextResponse.json({ answer, sources });
+    const responseBody: Record<string, unknown> = { answer, sources };
+    if (include_contexts) {
+      responseBody.contexts = topRows.map((r) => r.content);
+    }
+    return NextResponse.json(responseBody);
   } catch (err) {
     console.error("Chat API error:", err);
     return NextResponse.json(
       { error: "Internal server error", detail: String(err) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
