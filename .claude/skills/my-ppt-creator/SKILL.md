@@ -194,6 +194,77 @@ Everything else should be restrained.
 
 ---
 
+## Known Gotchas (bugs to avoid)
+
+### 1. `classList.add("")` throws `DOMException: SyntaxError`
+
+**Problem:** When implementing slide transitions with a "previous" direction class, a common pattern like:
+
+```js
+slides[current].classList.add(n > current ? "prev" : ""); // BROKEN
+```
+
+`classList.add("")` is spec-illegal — browsers throw `DOMException: SyntaxError` and kill the entire keydown handler silently. This manifests as: forward (→) navigation works, backward (←) navigation is completely dead.
+
+**Fix:** Guard the add with a condition:
+
+```js
+if (n > current) slides[current].classList.add("prev");
+// No else — the slide exits right via its default transform, no extra class needed
+```
+
+### 2. Keyboard stops working in fullscreen
+
+**Problem:** When entering fullscreen (F11 or `requestFullscreen()`), browser chrome steals focus from `document`. A `document.addEventListener("keydown", ...)` listener stops receiving events. The deck appears frozen.
+
+**Fix:** Three-part pattern:
+
+```html
+<!-- 1. Make the deck element focusable -->
+<div id="deck" tabindex="0"></div>
+```
+
+```js
+// 2. Refocus deck on fullscreen change and nav button clicks
+const deckEl = document.getElementById("deck");
+function refocus() {
+  deckEl.focus({ preventScroll: true });
+}
+document.addEventListener("fullscreenchange", refocus);
+document.addEventListener("webkitfullscreenchange", refocus);
+deckEl.addEventListener("click", refocus);
+
+// 3. Register keydown on BOTH document AND the deck element (dual listener)
+document.addEventListener("keydown", handleKey);
+deckEl.addEventListener("keydown", handleKey);
+
+// 4. Buttons must also call refocus after navigation
+prevBtn.addEventListener("click", () => {
+  goTo(current - 1);
+  refocus();
+});
+nextBtn.addEventListener("click", () => {
+  goTo(current + 1);
+  refocus();
+});
+```
+
+Optional: add `F` key + double-click to toggle fullscreen programmatically:
+
+```js
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    deckEl.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+deckEl.addEventListener("dblclick", toggleFullscreen);
+// add to handleKey: else if (e.key === "f" || e.key === "F") toggleFullscreen();
+```
+
+---
+
 ## Output format
 
 When generating the presentation, always output:
