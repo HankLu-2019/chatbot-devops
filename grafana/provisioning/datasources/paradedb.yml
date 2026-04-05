@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  - name: ParadeDB
+    type: postgres
+    uid: paradedb-ds
+    url: paradedb:5432
+    user: postgres
+    secureJsonData:
+      password: postgres
+    jsonData:
+      database: ragdb
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: false
+    isDefault: true
+    editable: false

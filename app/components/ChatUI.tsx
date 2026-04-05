@@ -9,6 +9,7 @@ interface Source {
   title: string;
   url: string;
   source_type: string;
+  snippet: string;
 }
 
 interface Message {
@@ -17,6 +18,7 @@ interface Message {
   content: string;
   sources?: Source[];
   noInfo?: boolean;
+  question?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,58 +67,197 @@ function AsstAvatar() {
 // Source chips
 // ---------------------------------------------------------------------------
 function SourceChips({ sources }: { sources: Source[] }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
   if (!sources || sources.length === 0) return null;
   return (
-    <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap" as const, gap: "6px" }}>
+    <div style={{ marginTop: "12px", display: "flex", flexDirection: "column" as const, gap: "6px" }}>
       {sources.map((s, i) => {
         const chip = sourceChipStyle(s.source_type);
+        const isOpen = openIndex === i;
         return (
-          <a
-            key={i}
-            href={s.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={s.title}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-              padding: "3px 10px 3px 6px",
-              borderRadius: "12px",
-              background: chip.bg,
-              textDecoration: "none",
-              transition: "filter 0.15s",
-              maxWidth: "260px",
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.filter = "brightness(0.95)"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.filter = "none"}
-          >
-            <span style={{
-              fontFamily: "var(--sans)",
-              fontSize: "11px",
-              fontWeight: 600,
-              color: chip.color,
-              background: chip.color + "18",
-              borderRadius: "6px",
-              padding: "0 5px",
-              lineHeight: "18px",
-              flexShrink: 0,
-            }}>
-              {chip.label}
-            </span>
-            <span style={{
-              fontFamily: "var(--sans)",
-              fontSize: "12px",
-              color: "var(--text-2)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap" as const,
-            }}>
-              {s.title}
-            </span>
-          </a>
+          <div key={i}>
+            {/* Chip row: [badge + title toggle] [↗ link] */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <button
+                onClick={() => setOpenIndex(isOpen ? null : i)}
+                title={s.title}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "3px 10px 3px 6px",
+                  borderRadius: "12px",
+                  background: chip.bg,
+                  border: "none",
+                  cursor: "pointer",
+                  textDecoration: "none",
+                  transition: "filter 0.15s",
+                  maxWidth: "260px",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.filter = "brightness(0.95)"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.filter = "none"}
+              >
+                <span style={{
+                  fontFamily: "var(--sans)",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: chip.color,
+                  background: chip.color + "18",
+                  borderRadius: "6px",
+                  padding: "0 5px",
+                  lineHeight: "18px",
+                  flexShrink: 0,
+                }}>
+                  {chip.label}
+                </span>
+                <span style={{
+                  fontFamily: "var(--sans)",
+                  fontSize: "12px",
+                  color: "var(--text-2)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap" as const,
+                }}>
+                  {s.title}
+                </span>
+              </button>
+              {/* ↗ direct URL icon */}
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                title="Open original"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "4px",
+                  color: "var(--text-3)",
+                  textDecoration: "none",
+                  fontSize: "12px",
+                  transition: "color 0.12s, background 0.12s",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.color = "var(--blue)";
+                  (e.currentTarget as HTMLElement).style.background = "var(--blue-light, rgba(26,115,232,0.08))";
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.color = "var(--text-3)";
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
+              >
+                ↗
+              </a>
+            </div>
+            {/* Peek panel */}
+            {isOpen && (
+              <div style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                padding: "10px 12px",
+                marginTop: "6px",
+                maxWidth: "480px",
+              }}>
+                <p style={{
+                  margin: "0 0 8px",
+                  fontFamily: "var(--sans)",
+                  fontSize: "12px",
+                  color: "var(--text-2)",
+                  lineHeight: 1.5,
+                  wordBreak: "break-word",
+                }}>
+                  {s.snippet || "No preview available."}
+                </p>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontFamily: "var(--sans)",
+                    fontSize: "12px",
+                    color: "var(--blue)",
+                    textDecoration: "none",
+                  }}
+                >
+                  View original →
+                </a>
+              </div>
+            )}
+          </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Feedback thumbs
+// ---------------------------------------------------------------------------
+function FeedbackThumbs({ space, question }: { space?: string; question?: string }) {
+  const [vote, setVote] = useState<"up" | "down" | null>(null);
+
+  function handleVote(v: "up" | "down") {
+    if (vote !== null) return;
+    setVote(v);
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ space, question: question ?? "", vote: v }),
+    }).catch(() => {});
+  }
+
+  const baseStyle: React.CSSProperties = {
+    background: "transparent",
+    border: "none",
+    padding: "2px 4px",
+    cursor: vote !== null ? "default" : "pointer",
+    borderRadius: "4px",
+    display: "inline-flex",
+    alignItems: "center",
+    transition: "opacity 0.15s",
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "2px", marginTop: "8px" }}>
+      <button
+        onClick={() => handleVote("up")}
+        disabled={vote !== null}
+        title="Helpful"
+        style={{
+          ...baseStyle,
+          opacity: vote === "down" ? 0.3 : 1,
+        }}
+        onMouseEnter={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "0.7"; }}
+        onMouseLeave={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={vote === "up" ? "var(--green, #1e8e3e)" : "none"}
+          stroke={vote === "up" ? "var(--green, #1e8e3e)" : "var(--text-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+          <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+        </svg>
+      </button>
+      <button
+        onClick={() => handleVote("down")}
+        disabled={vote !== null}
+        title="Not helpful"
+        style={{
+          ...baseStyle,
+          opacity: vote === "up" ? 0.3 : 1,
+        }}
+        onMouseEnter={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "0.7"; }}
+        onMouseLeave={e => { if (vote === null) (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={vote === "down" ? "var(--red, #d93025)" : "none"}
+          stroke={vote === "down" ? "var(--red, #d93025)" : "var(--text-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
+          <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+        </svg>
+      </button>
     </div>
   );
 }
@@ -147,9 +288,9 @@ function UserMessage({ content }: { content: string }) {
 }
 
 function AssistantMessage({
-  content, sources, noInfo,
+  content, sources, noInfo, space, question,
 }: {
-  content: string; sources?: Source[]; noInfo?: boolean;
+  content: string; sources?: Source[]; noInfo?: boolean; space?: string; question?: string;
 }) {
   return (
     <div className="msg-enter" style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
@@ -191,6 +332,9 @@ function AssistantMessage({
             <SourceChips sources={sources} />
           </>
         )}
+        {!noInfo && (
+          <FeedbackThumbs space={space} question={question} />
+        )}
       </div>
     </div>
   );
@@ -215,6 +359,34 @@ function TypingIndicator() {
   );
 }
 
+function StreamingMessage({ content }: { content: string }) {
+  return (
+    <div className="msg-enter" style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+      <AsstAvatar />
+      <div style={{
+        maxWidth: "78%",
+        background: "var(--surface)",
+        borderRadius: "4px 18px 18px 18px",
+        padding: "12px 16px",
+        boxShadow: "var(--shadow-1)",
+        border: "1px solid var(--border)",
+      }}>
+        <p style={{
+          margin: 0,
+          fontFamily: "var(--sans)",
+          fontSize: "14px",
+          lineHeight: "1.6",
+          color: "var(--text-1)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}>
+          {content}<span className="streaming-cursor" />
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
@@ -226,7 +398,7 @@ const STARTER_QUESTIONS = [
   "How do I check logs for a specific pod?",
 ];
 
-function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
+function EmptyState({ onSelect, questions }: { onSelect: (q: string) => void; questions: string[] }) {
   return (
     <div style={{
       display: "flex",
@@ -280,7 +452,7 @@ function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
         width: "100%",
         maxWidth: "540px",
       }}>
-        {STARTER_QUESTIONS.map((q) => (
+        {questions.map((q) => (
           <button
             key={q}
             onClick={() => onSelect(q)}
@@ -321,19 +493,40 @@ function EmptyState({ onSelect }: { onSelect: (q: string) => void }) {
 // ---------------------------------------------------------------------------
 // Main ChatUI
 // ---------------------------------------------------------------------------
-export default function ChatUI() {
+interface ChatUIProps {
+  space?: string;
+  title?: string;
+  exampleQuestions?: string[];
+}
+
+export default function ChatUI({ space, title, exampleQuestions }: ChatUIProps = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+  const displayTitle = title ?? "Acme Engineering Assistant";
+  const displayQuestions =
+    exampleQuestions && exampleQuestions.length > 0 ? exampleQuestions : STARTER_QUESTIONS;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   function buildHistory() {
-    return messages.map((m) => ({ role: m.role, content: m.content }));
+    return messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
+  }
+
+  function resetConversation() {
+    if (loading) return;
+    setMessages([]);
+    setInput("");
   }
 
   async function sendMessage(text: string) {
@@ -343,33 +536,79 @@ export default function ChatUI() {
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
+    setStreamingContent("");
+
+    let accumulated = "";
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text.trim(), history: buildHistory() }),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
+        body: JSON.stringify({ message: text.trim(), history: buildHistory(), space }),
       });
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
 
-      const data = await res.json();
-      const answer: string = data.answer || "No answer returned.";
-      const sources: Source[] = data.sources || [];
-      const noInfo = answer.includes(NO_INFO_ANSWER);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      setMessages((prev) => [
-        ...prev,
-        { id: generateId(), role: "assistant", content: answer, sources, noInfo },
-      ]);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          let event: { type: string; text?: string; sources?: Source[]; answer?: string; message?: string };
+          try {
+            event = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
+          }
+
+          if (event.type === "token" && event.text) {
+            accumulated += event.text;
+            if (mountedRef.current) setStreamingContent(accumulated);
+          } else if (event.type === "done") {
+            const finalAnswer = accumulated || event.answer || "No answer returned.";
+            const sources: Source[] = event.sources ?? [];
+            const noInfo = finalAnswer.includes(NO_INFO_ANSWER);
+            if (mountedRef.current) {
+              setMessages((prev) => [
+                ...prev,
+                { id: generateId(), role: "assistant", content: finalAnswer, sources, noInfo, question: text.trim() },
+              ]);
+              setStreamingContent("");
+            }
+          } else if (event.type === "error") {
+            throw new Error(event.message ?? "Stream error");
+          }
+        }
+      }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { id: generateId(), role: "assistant", content: `Something went wrong: ${String(err)}`, noInfo: true },
-      ]);
+      if (mountedRef.current) {
+        const content = accumulated
+          ? `${accumulated}\n\nResponse interrupted. Please try again.`
+          : `Something went wrong: ${String(err)}`;
+        setMessages((prev) => [
+          ...prev,
+          { id: generateId(), role: "assistant", content, noInfo: !accumulated, question: text.trim() },
+        ]);
+        setStreamingContent("");
+      }
     } finally {
-      setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (mountedRef.current) {
+        setLoading(false);
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
     }
   }
 
@@ -421,23 +660,53 @@ export default function ChatUI() {
           </div>
           <div>
             <div style={{ fontFamily: "var(--sans)", fontSize: "15px", fontWeight: 500, color: "var(--text-1)", lineHeight: 1.2 }}>
-              Acme Engineering Assistant
+              {displayTitle}
             </div>
             <div style={{ fontFamily: "var(--sans)", fontSize: "11px", color: "var(--text-3)", lineHeight: 1 }}>
               Powered by RAG · Confluence · Jira · Runbooks
             </div>
           </div>
         </div>
-        <div style={{
-          fontFamily: "var(--mono)",
-          fontSize: "11px",
-          color: "var(--text-3)",
-          background: "var(--surface-2)",
-          border: "1px solid var(--border)",
-          borderRadius: "12px",
-          padding: "2px 10px",
-        }}>
-          internal · confidential
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            onClick={resetConversation}
+            disabled={loading}
+            title="New conversation"
+            style={{
+              fontFamily: "var(--sans)",
+              fontSize: "12px",
+              color: loading ? "var(--text-3)" : "var(--text-2)",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "12px",
+              padding: "2px 10px",
+              cursor: loading ? "default" : "pointer",
+              transition: "border-color 0.15s, color 0.15s",
+            }}
+            onMouseEnter={e => {
+              if (!loading) {
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--blue)";
+                (e.currentTarget as HTMLElement).style.color = "var(--blue)";
+              }
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+              (e.currentTarget as HTMLElement).style.color = loading ? "var(--text-3)" : "var(--text-2)";
+            }}
+          >
+            New conversation
+          </button>
+          <div style={{
+            fontFamily: "var(--mono)",
+            fontSize: "11px",
+            color: "var(--text-3)",
+            background: "var(--surface-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "12px",
+            padding: "2px 10px",
+          }}>
+            internal · confidential
+          </div>
         </div>
       </div>
 
@@ -456,7 +725,7 @@ export default function ChatUI() {
         boxSizing: "border-box",
       }}>
         {messages.length === 0 ? (
-          <EmptyState onSelect={sendMessage} />
+          <EmptyState onSelect={sendMessage} questions={displayQuestions} />
         ) : (
           messages.map((msg) =>
             msg.role === "user" ? (
@@ -467,12 +736,15 @@ export default function ChatUI() {
                 content={msg.content}
                 sources={msg.sources}
                 noInfo={msg.noInfo}
+                space={space}
+                question={msg.question}
               />
             )
           )
         )}
 
-        {loading && <TypingIndicator />}
+        {loading && streamingContent === "" && <TypingIndicator />}
+        {streamingContent !== "" && <StreamingMessage content={streamingContent} />}
         <div ref={bottomRef} />
       </div>
 

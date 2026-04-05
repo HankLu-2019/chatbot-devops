@@ -10,6 +10,7 @@ Usage:
     python ingest.py
 """
 
+import argparse
 import json
 import os
 import sys
@@ -24,6 +25,12 @@ from pgvector.psycopg2 import register_vector
 from openai import OpenAI
 
 from chunker import chunk_confluence, chunk_jira, chunk_doc
+
+try:
+    import yaml
+    _YAML_AVAILABLE = True
+except ImportError:
+    _YAML_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -40,7 +47,9 @@ DATABASE_URL = os.environ.get(
     "postgresql://postgres:postgres@localhost:5432/ragdb",
 )
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+_REPO_ROOT = Path(__file__).parent.parent
+# When running in Docker the volume is mounted at /data; honour that if present.
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(_REPO_ROOT / "data")))
 
 # ---------------------------------------------------------------------------
 # OpenAI setup
@@ -122,29 +131,159 @@ def insert_chunk(conn, chunk: dict, embedding: list[float]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Config loading (scraper/config.yml is SSOT for space names)
+# ---------------------------------------------------------------------------
+
+def _load_spaces_from_config() -> list[str]:
+    """Return list of space values from scraper/config.yml, or [] if unavailable."""
+    if not _YAML_AVAILABLE:
+        return []
+    config_path = _REPO_ROOT / "scraper" / "config.yml"
+    if not config_path.exists():
+        return []
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+        spaces = [team["space"] for team in cfg.get("teams", []) if "space" in team]
+        print(f"Config: loaded {len(spaces)} spaces from scraper/config.yml: {spaces}")
+        return spaces
+    except Exception as exc:
+        print(f"WARNING: could not parse scraper/config.yml: {exc}", file=sys.stderr)
+        return []
+
+
+# Map doc filename prefixes to team space values (hardcoded fallback)
+_DOC_SPACE_MAP_DEFAULT = {
+    "cicd-": "CI-CD",
+    "ci-cd-": "CI-CD",
+    "infra-": "INFRA",
+    "infrastructure-": "INFRA",
+    "runbook-": "INFRA",
+    "eng-env-": "ENG-ENV",
+    "onboarding-": "ENG-ENV",
+}
+
+def _build_doc_space_map() -> dict[str, str]:
+    """
+    Build DOC_SPACE_MAP from config.yml if available; fall back to hardcoded map.
+    Config spaces produce prefix entries: 'ci-cd-' → 'CI-CD', etc.
+    Always merges with the hardcoded map so existing prefixes still work.
+    """
+    space_map = dict(_DOC_SPACE_MAP_DEFAULT)
+    spaces = _load_spaces_from_config()
+    for space in spaces:
+        prefix = space.lower().rstrip("-") + "-"
+        if prefix not in space_map:
+            space_map[prefix] = space
+    return space_map
+
+DOC_SPACE_MAP = _build_doc_space_map()
+
+
+# ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_confluence_chunks() -> list[dict]:
-    path = DATA_DIR / "confluence" / "pages.json"
-    with open(path, "r", encoding="utf-8") as f:
-        pages = json.load(f)
-    chunks = []
-    for page in pages:
-        chunks.extend(chunk_confluence(page))
-    print(f"Confluence: {len(pages)} pages → {len(chunks)} chunks")
-    return chunks
+def load_confluence_chunks() -> tuple[list[dict], list[Path]]:
+    """
+    Scan data/<SPACE>/confluence_*.json files (skipping .tmp).
+    Returns (chunks, processed_files).
+    Falls back to legacy data/confluence/pages.json if it exists.
+    """
+    chunks: list[dict] = []
+    processed_files: list[Path] = []
+    total_pages = 0
+
+    # New per-team folder structure
+    for json_file in sorted(DATA_DIR.glob("*/confluence_*.json")):
+        if json_file.suffix == ".tmp" or json_file.name.endswith(".tmp"):
+            continue
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                pages = json.load(f)
+            file_chunks = []
+            for page in pages:
+                file_chunks.extend(chunk_confluence(page))
+            chunks.extend(file_chunks)
+            total_pages += len(pages)
+            processed_files.append(json_file)
+            print(f"  Confluence {json_file}: {len(pages)} pages → {len(file_chunks)} chunks")
+        except Exception as exc:
+            print(f"  WARNING: could not load {json_file}: {exc}", file=sys.stderr)
+
+    # Legacy fallback
+    legacy_path = DATA_DIR / "confluence" / "pages.json"
+    if legacy_path.exists() and legacy_path not in processed_files:
+        try:
+            with open(legacy_path, "r", encoding="utf-8") as f:
+                pages = json.load(f)
+            legacy_chunks = []
+            for page in pages:
+                legacy_chunks.extend(chunk_confluence(page))
+            chunks.extend(legacy_chunks)
+            total_pages += len(pages)
+            # Legacy file is not auto-deleted (manually managed)
+            print(f"  Confluence (legacy) {legacy_path}: {len(pages)} pages → {len(legacy_chunks)} chunks")
+        except Exception as exc:
+            print(f"  WARNING: could not load legacy {legacy_path}: {exc}", file=sys.stderr)
+
+    print(f"Confluence total: {total_pages} pages → {len(chunks)} chunks")
+    return chunks, processed_files
 
 
-def load_jira_chunks() -> list[dict]:
-    path = DATA_DIR / "jira" / "tickets.json"
-    with open(path, "r", encoding="utf-8") as f:
-        tickets = json.load(f)
-    chunks = []
-    for ticket in tickets:
-        chunks.extend(chunk_jira(ticket))
-    print(f"Jira: {len(tickets)} tickets → {len(chunks)} chunks")
-    return chunks
+def load_jira_chunks() -> tuple[list[dict], list[Path]]:
+    """
+    Scan data/<SPACE>/jira_*.json files (skipping .tmp).
+    Returns (chunks, processed_files).
+    Falls back to legacy data/jira/tickets.json if it exists.
+    """
+    chunks: list[dict] = []
+    processed_files: list[Path] = []
+    total_tickets = 0
+
+    # New per-team folder structure
+    for json_file in sorted(DATA_DIR.glob("*/jira_*.json")):
+        if json_file.suffix == ".tmp" or json_file.name.endswith(".tmp"):
+            continue
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                tickets = json.load(f)
+            file_chunks = []
+            for ticket in tickets:
+                file_chunks.extend(chunk_jira(ticket))
+            chunks.extend(file_chunks)
+            total_tickets += len(tickets)
+            processed_files.append(json_file)
+            print(f"  Jira {json_file}: {len(tickets)} tickets → {len(file_chunks)} chunks")
+        except Exception as exc:
+            print(f"  WARNING: could not load {json_file}: {exc}", file=sys.stderr)
+
+    # Legacy fallback
+    legacy_path = DATA_DIR / "jira" / "tickets.json"
+    if legacy_path.exists() and legacy_path not in processed_files:
+        try:
+            with open(legacy_path, "r", encoding="utf-8") as f:
+                tickets = json.load(f)
+            legacy_chunks = []
+            for ticket in tickets:
+                legacy_chunks.extend(chunk_jira(ticket))
+            chunks.extend(legacy_chunks)
+            total_tickets += len(tickets)
+            print(f"  Jira (legacy) {legacy_path}: {len(tickets)} tickets → {len(legacy_chunks)} chunks")
+        except Exception as exc:
+            print(f"  WARNING: could not load legacy {legacy_path}: {exc}", file=sys.stderr)
+
+    print(f"Jira total: {total_tickets} tickets → {len(chunks)} chunks")
+    return chunks, processed_files
+
+
+def _infer_doc_space(stem: str) -> str:
+    """Infer team space from a doc filename stem."""
+    lower = stem.lower()
+    for prefix, space in DOC_SPACE_MAP.items():
+        if lower.startswith(prefix):
+            return space
+    return ""
 
 
 def load_doc_chunks() -> list[dict]:
@@ -157,6 +296,7 @@ def load_doc_chunks() -> list[dict]:
             "title":       txt_path.stem.replace("-", " ").title(),
             "content":     content,
             "source_type": "doc",
+            "space":       _infer_doc_space(txt_path.stem),
             "url":         f"https://acme.atlassian.net/wiki/docs/{txt_path.stem}",
             "updated_at":  datetime.now(tz=timezone.utc).isoformat(),
         }
@@ -171,19 +311,49 @@ def load_doc_chunks() -> list[dict]:
 # Main
 # ---------------------------------------------------------------------------
 
+def clean_documents(conn) -> None:
+    """Delete all rows from the documents table (used before a full re-ingest)."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM documents")
+    conn.commit()
+    print("Cleaned: all existing documents deleted.\n")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Acme RAG Ingestion Pipeline")
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete all existing documents before ingesting (full re-ingest). "
+             "Use this after chunking logic changes that alter content_hash values.",
+    )
+    args = parser.parse_args()
+
     print("=== Acme RAG Ingestion Pipeline ===\n")
 
     # 1. Load all chunks
     all_chunks: list[dict] = []
-    all_chunks.extend(load_confluence_chunks())
-    all_chunks.extend(load_jira_chunks())
-    all_chunks.extend(load_doc_chunks())
+    confluence_chunks, confluence_files = load_confluence_chunks()
+    jira_chunks, jira_files = load_jira_chunks()
+    doc_chunks = load_doc_chunks()
+
+    all_chunks.extend(confluence_chunks)
+    all_chunks.extend(jira_chunks)
+    all_chunks.extend(doc_chunks)
+
+    processed_files = confluence_files + jira_files
+
+    if not all_chunks and not processed_files:
+        print("No new data files found. Nothing to ingest.")
+        return
+
     print(f"\nTotal chunks to process: {len(all_chunks)}\n")
 
-    # 2. Connect to DB and find already-ingested hashes
+    # 2. Connect to DB; optionally wipe before re-ingesting
     print("Connecting to database ...")
     conn = get_connection()
+    if args.clean:
+        clean_documents(conn)
     existing_hashes = get_existing_hashes(conn)
     print(f"Found {len(existing_hashes)} existing chunks in DB.\n")
 
@@ -220,6 +390,16 @@ def main() -> None:
     print(f"  Inserted: {inserted}")
     print(f"  Skipped (errors): {skipped}")
     print(f"  Already existed: {len(all_chunks) - len(new_chunks)}")
+
+    # Delete processed scraper-output files now that DB commit succeeded
+    if processed_files:
+        print(f"\nCleaning up {len(processed_files)} processed file(s):")
+        for f in processed_files:
+            try:
+                f.unlink()
+                print(f"  Deleted: {f}")
+            except Exception as exc:
+                print(f"  WARNING: could not delete {f}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
