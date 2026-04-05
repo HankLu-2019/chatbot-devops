@@ -13,3 +13,9 @@ venv/
 .venv/
 app/.env.local
 .gstack/
+
+# Claude Code — local-only, never commit
+.claude/settings.local.json
+.claude/command-log.txt
+".claude/settings copy*.json"
+.claude/worktrees/

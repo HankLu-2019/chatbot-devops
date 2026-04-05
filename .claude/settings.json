@@ -39,16 +39,17 @@
         ]
       }
     ],
-    "Stop": [
+    "SessionStart": [
       {
-        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/auto-commit.sh"
+            "command": "bash .claude/hooks/session-start.sh"
           }
         ]
       }
     ]
+  
+
   }
 }
