@@ -998,6 +998,137 @@
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
+
+      /* ─────────────────────────────────────────────────────
+   Data Pipeline slide
+───────────────────────────────────────────────────── */
+      .scraper-flow {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--gap);
+        flex: 1;
+      }
+
+      .flow-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: clamp(0.8rem, 2vw, 1.2rem);
+        display: flex;
+        flex-direction: column;
+        gap: 0.4em;
+      }
+
+      .flow-card h3 {
+        font-size: clamp(0.75rem, 1.5vw, 0.92rem);
+      }
+
+      .flow-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35em;
+        padding: 0.2em 0.55em;
+        border-radius: 999px;
+        font-family: var(--mono);
+        font-size: clamp(0.52rem, 0.95vw, 0.65rem);
+        font-weight: 600;
+        background: rgba(79, 142, 247, 0.12);
+        color: var(--accent2);
+        margin-bottom: 0.2em;
+        width: fit-content;
+      }
+
+      .flow-detail {
+        font-size: clamp(0.58rem, 1.1vw, 0.7rem);
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .scraper-banner {
+        display: flex;
+        align-items: center;
+        gap: var(--gap);
+        padding: 0.55em 1em;
+        background: rgba(79, 142, 247, 0.07);
+        border: 1px solid rgba(79, 142, 247, 0.2);
+        border-radius: var(--r-sm);
+        font-size: clamp(0.58rem, 1.1vw, 0.7rem);
+      }
+
+      .scraper-banner .mono {
+        color: var(--accent2);
+      }
+
+      /* ─────────────────────────────────────────────────────
+   Evaluation Suite slide
+───────────────────────────────────────────────────── */
+      .eval-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--gap);
+        flex: 1;
+      }
+
+      .eval-layer {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: clamp(0.8rem, 2vw, 1.2rem);
+        display: flex;
+        flex-direction: column;
+        gap: 0.55em;
+      }
+
+      .eval-layer-title {
+        font-size: clamp(0.65rem, 1.2vw, 0.78rem);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+        padding-bottom: 0.4em;
+        border-bottom: 1px solid var(--border2);
+        margin-bottom: 0.2em;
+      }
+
+      .metric-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6em;
+        padding: 0.35em 0.5em;
+        border-radius: var(--r-sm);
+        background: rgba(255, 255, 255, 0.025);
+      }
+
+      .metric-name {
+        font-family: var(--mono);
+        font-size: clamp(0.58rem, 1.1vw, 0.7rem);
+        font-weight: 600;
+        color: var(--text);
+        min-width: 7em;
+      }
+
+      .metric-desc {
+        font-size: clamp(0.55rem, 1vw, 0.65rem);
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .eval-target {
+        font-family: var(--mono);
+        font-size: clamp(0.5rem, 0.9vw, 0.6rem);
+        color: var(--green);
+        margin-left: auto;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      /* ── Updated stats grid — 3 cols × 2 rows ── */
+      .stats-grid-6 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: calc(var(--gap) * 0.8);
+        flex: 1;
+      }
     </style>
   </head>
   <body>
@@ -1207,7 +1338,81 @@
         </section>
 
         <!-- ══════════════════════════════════════════════
-         SLIDE 5 — Team Scopes
+         SLIDE 5 — Data Scraping Pipeline
+    ══════════════════════════════════════════════ -->
+        <section id="s-pipeline">
+          <div class="slide-header">
+            <div class="eyebrow">04b · Data Pipeline</div>
+            <h2>Automated Data Scraping Pipeline</h2>
+          </div>
+          <div class="scraper-banner">
+            <span class="mono">scraper/</span>
+            <span style="color: var(--muted)"
+              >runs every <strong style="color: var(--text)">6 hours</strong> in
+              Docker · writes to</span
+            >
+            <span class="mono">data/&lt;SPACE&gt;/</span>
+            <span style="color: var(--muted)">· SSOT:</span>
+            <span class="mono">scraper/config.yml</span>
+            <span class="tag tag-green" style="margin-left: auto"
+              >3 spaces indexed</span
+            >
+          </div>
+          <div class="scraper-flow">
+            <div class="flow-card">
+              <div class="flow-badge">Mode 1</div>
+              <h3>Incremental Fetch</h3>
+              <p class="flow-detail">
+                Fetches Confluence pages and Jira tickets modified in the last
+                <strong>24h</strong> per run. Keeps the KB up to date without
+                full re-ingestion.
+              </p>
+            </div>
+            <div class="flow-card">
+              <div class="flow-badge">Mode 2</div>
+              <h3>Gap Check</h3>
+              <p class="flow-detail">
+                Detects missed Jira tickets by comparing
+                <span class="mono" style="color: var(--accent2)"
+                  >state.max_issue_number</span
+                >
+                against the latest issue ID. Fills holes silently.
+              </p>
+            </div>
+            <div class="flow-card">
+              <div class="flow-badge">Mode 3</div>
+              <h3>Backfill</h3>
+              <p class="flow-detail">
+                New sources are fetched in batches of
+                <strong>50/run</strong> across multiple scraper cycles — avoids
+                rate-limit spikes on first-time indexing.
+              </p>
+            </div>
+            <div class="flow-card">
+              <div class="flow-badge">Reliability</div>
+              <h3>Atomic Writes + State Tracking</h3>
+              <p class="flow-detail">
+                <span class="mono" style="color: var(--accent2)"
+                  >.tmp → .json</span
+                >
+                rename prevents the ingestor reading partial files. JSON state
+                tracks
+                <span class="mono" style="color: var(--accent2)"
+                  >last_fetched</span
+                >,
+                <span class="mono" style="color: var(--accent2)"
+                  >max_issue_number</span
+                >,
+                <span class="mono" style="color: var(--accent2)"
+                  >backfill_cursor</span
+                >.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════════════════════════════════════════
+         SLIDE 6 — Team Scopes
     ══════════════════════════════════════════════ -->
         <section id="s5">
           <div class="slide-header">
@@ -1399,6 +1604,81 @@
         </section>
 
         <!-- ══════════════════════════════════════════════
+         SLIDE — Evaluation Suite
+    ══════════════════════════════════════════════ -->
+        <section id="s-eval">
+          <div class="slide-header">
+            <div class="eyebrow">07b · Evaluation</div>
+            <h2>RAG Evaluation Suite</h2>
+            <p style="margin-top: 0.3em">
+              Two-layer harness: retrieval quality + generation quality. Golden
+              datasets auto-generated from mock-apis via Gemini Flash.
+            </p>
+          </div>
+          <div class="eval-layout">
+            <div class="eval-layer">
+              <div class="eval-layer-title">Layer 1 — Retrieval</div>
+              <p class="flow-detail" style="margin-bottom: 0.3em">
+                Runs hybrid search SQL directly against DB. Checks if source doc
+                appears in top-K results.
+              </p>
+              <div class="metric-row">
+                <span class="metric-name">Recall@5</span>
+                <span class="metric-desc">Source doc in top-5 results</span>
+                <span class="eval-target">≥ 0.70</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-name">Recall@10</span>
+                <span class="metric-desc">Source doc in top-10 results</span>
+                <span class="eval-target">≥ 0.80</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-name">MRR@10</span>
+                <span class="metric-desc"
+                  >Mean reciprocal rank — rewards higher position</span
+                >
+                <span class="eval-target">≥ 0.50</span>
+              </div>
+            </div>
+            <div class="eval-layer">
+              <div class="eval-layer-title">Layer 2 — Generation (RAGAS)</div>
+              <p class="flow-detail" style="margin-bottom: 0.3em">
+                Calls live chat API with
+                <span class="mono" style="color: var(--accent2)"
+                  >include_contexts=true</span
+                >. Gemini Flash as LLM judge.
+              </p>
+              <div class="metric-row">
+                <span class="metric-name">Faithfulness</span>
+                <span class="metric-desc"
+                  >Answer grounded in context — no hallucination</span
+                >
+                <span class="eval-target">≥ 0.80</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-name">Ans. Relevancy</span>
+                <span class="metric-desc">Answer addresses the question</span>
+                <span class="eval-target">≥ 0.80</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-name">Ctx. Precision</span>
+                <span class="metric-desc"
+                  >Retrieved chunks are relevant to query</span
+                >
+                <span class="eval-target">≥ 0.70</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-name">Ctx. Recall</span>
+                <span class="metric-desc"
+                  >Chunks contain enough info to answer</span
+                >
+                <span class="eval-target">≥ 0.70</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════════════════════════════════════════
          SLIDE 8 — What We Built
     ══════════════════════════════════════════════ -->
         <section id="s8">
@@ -1406,7 +1686,7 @@
             <div class="eyebrow">07 · Summary</div>
             <h2>What We Built</h2>
           </div>
-          <div class="stats-grid">
+          <div class="stats-grid-6">
             <div class="stat-card">
               <div class="big-num">4</div>
               <h3>Team knowledge bases</h3>
@@ -1431,6 +1711,20 @@
               <h3>Search quality improvements</h3>
               <div class="stat-footer">
                 Score fusion · Time-decay · Token budget
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="big-num">6h</div>
+              <h3>Data scraping cadence</h3>
+              <div class="stat-footer">
+                Incremental · gap check · backfill · 3 spaces
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="big-num">7</div>
+              <h3>Eval metrics</h3>
+              <div class="stat-footer">
+                Recall@5/10 · MRR@10 · Faithfulness · Relevancy · Ctx P/R
               </div>
             </div>
           </div>
@@ -1486,9 +1780,23 @@
                 <td>LLM generation + 768-dim embeddings</td>
               </tr>
               <tr>
+                <td>Scraper</td>
+                <td>Python 3.11 · uv · Docker (every 6h)</td>
+                <td>
+                  Incremental Confluence + Jira fetch → data/&lt;SPACE&gt;/
+                </td>
+              </tr>
+              <tr>
                 <td>Grafana</td>
                 <td>Grafana 11.6 · ParadeDB datasource</td>
                 <td>Feedback dashboard — thumbs up/down analytics</td>
+              </tr>
+              <tr>
+                <td>Eval Suite</td>
+                <td>Python · RAGAS · psycopg2 · Gemini judge</td>
+                <td>
+                  Retrieval (Recall/MRR) + generation (Faithfulness/Relevancy)
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1520,9 +1828,53 @@
                   <span class="tag tag-green">Done</span>
                 </div>
                 <p>
-                  Structure-aware recursive chunker with 1,800-token max.
-                  Prevents silent overflow at embedding model input limit. 18
-                  unit tests.
+                  Structure-aware recursive chunker, 1,800-token max, 18 unit
+                  tests. Prevents silent overflow at embedding model limit.
+                </p>
+              </div>
+            </div>
+            <div class="roadmap-item">
+              <div class="roadmap-timeline">
+                <div class="roadmap-dot done"></div>
+              </div>
+              <div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5em;
+                    margin-bottom: 0.2em;
+                  "
+                >
+                  <h3>🔄 Automated data scraping pipeline</h3>
+                  <span class="tag tag-green">Done</span>
+                </div>
+                <p>
+                  Scraper runs every 6h — incremental fetch, Jira gap check,
+                  backfill batching. Atomic writes + JSON state tracking.
+                </p>
+              </div>
+            </div>
+            <div class="roadmap-item">
+              <div class="roadmap-timeline">
+                <div class="roadmap-dot done"></div>
+              </div>
+              <div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5em;
+                    margin-bottom: 0.2em;
+                  "
+                >
+                  <h3>🧪 RAG evaluation suite</h3>
+                  <span class="tag tag-green">Done</span>
+                </div>
+                <p>
+                  Recall@5/10, MRR@10 for retrieval. RAGAS faithfulness, answer
+                  relevancy, context precision/recall for generation. Gemini
+                  Flash as judge.
                 </p>
               </div>
             </div>
@@ -1544,7 +1896,7 @@
                 </div>
                 <p>
                   Compare current vs last-good Jenkinsfile to surface config
-                  regressions in the diff — before they cause a broken build.
+                  regressions before they cause a broken build.
                 </p>
               </div>
             </div>
