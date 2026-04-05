@@ -1133,7 +1133,7 @@
   </head>
   <body>
     <div id="stage">
-      <div id="deck">
+      <div id="deck" tabindex="0">
         <!-- ══════════════════════════════════════════════
          SLIDE 1 — Cover
     ══════════════════════════════════════════════ -->
@@ -2069,12 +2069,41 @@
         document.getElementById("next-btn").disabled = current === total - 1;
       }
 
+      // ── Focus management ────────────────────────────────────
+      // deck is tabindex="0" so it can hold focus in fullscreen.
+      // Re-focus on any click inside the deck and on fullscreen transitions.
+      const deckEl = document.getElementById("deck");
+      function refocus() {
+        deckEl.focus({ preventScroll: true });
+      }
+
+      deckEl.addEventListener("click", refocus);
+
+      document.addEventListener("fullscreenchange", refocus);
+      document.addEventListener("webkitfullscreenchange", refocus);
+
+      // ── Fullscreen toggle (F key or double-click) ────────────
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          deckEl.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+      deckEl.addEventListener("dblclick", toggleFullscreen);
+
       // ── Keyboard ────────────────────────────────────────────
-      document.addEventListener("keydown", (e) => {
+      // Listen on both document AND deck to survive fullscreen focus shifts.
+      function handleKey(e) {
+        const tag = document.activeElement?.tagName;
+        // Don't intercept if a real input has focus
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+
         if (
           e.key === "ArrowRight" ||
           e.key === "ArrowDown" ||
-          e.key === "PageDown"
+          e.key === "PageDown" ||
+          e.key === " "
         ) {
           e.preventDefault();
           goTo(current + 1);
@@ -2091,16 +2120,22 @@
         } else if (e.key === "End") {
           e.preventDefault();
           goTo(total - 1);
+        } else if (e.key === "f" || e.key === "F") {
+          toggleFullscreen();
         }
-      });
+      }
+      document.addEventListener("keydown", handleKey);
+      deckEl.addEventListener("keydown", handleKey);
 
       // ── Buttons ─────────────────────────────────────────────
-      document
-        .getElementById("prev-btn")
-        .addEventListener("click", () => goTo(current - 1));
-      document
-        .getElementById("next-btn")
-        .addEventListener("click", () => goTo(current + 1));
+      document.getElementById("prev-btn").addEventListener("click", () => {
+        goTo(current - 1);
+        refocus();
+      });
+      document.getElementById("next-btn").addEventListener("click", () => {
+        goTo(current + 1);
+        refocus();
+      });
 
       // ── Touch / swipe ────────────────────────────────────────
       let touchStartX = 0;
