@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at    TIMESTAMPTZ,
     content_hash  TEXT UNIQUE,
     parent_id     INT REFERENCES documents(id),
-    embedding     vector(768)
+    embedding     vector(1536)
 );
 
 -- HNSW index for vector similarity search

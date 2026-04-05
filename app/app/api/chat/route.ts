@@ -60,9 +60,12 @@ Last user message: ${message}
 
 Standalone search query:`;
 
-  const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const result = await model.generateContent(prompt);
-  const rewritten = result.response.text().trim();
+  const response = await openai.chat.completions.create({
+    model: CHAT_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0,
+  });
+  const rewritten = response.choices[0].message.content?.trim();
   return rewritten || message;
 }
 

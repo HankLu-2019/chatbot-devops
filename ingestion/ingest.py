@@ -14,7 +14,6 @@ import argparse
 import json
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,8 +22,7 @@ import psycopg2.extras
 from dotenv import load_dotenv
 from pgvector.psycopg2 import register_vector
 
-from google import genai
-from google.genai import types as genai_types
+from openai import OpenAI
 
 from chunker import chunk_confluence, chunk_jira, chunk_doc
 
@@ -40,9 +38,9 @@ except ImportError:
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-EMBED_MODEL = "gemini-embedding-001"
-EMBED_DIM = 768
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+EMBED_MODEL = "text-embedding-3-small"
+EMBED_DIM = 1536
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -53,42 +51,41 @@ _REPO_ROOT = Path(__file__).parent.parent
 # When running in Docker the volume is mounted at /data; honour that if present.
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(_REPO_ROOT / "data")))
 
-# Gemini embed API rate limit is 1500 RPM (free tier); add a small delay to be safe
-EMBED_DELAY_SECONDS = 0.05
-
 # ---------------------------------------------------------------------------
-# Gemini setup (new google-genai SDK)
+# OpenAI setup
 # ---------------------------------------------------------------------------
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
 def embed_text(text: str) -> list[float]:
-    """Embed a single text string using Gemini text-embedding-004."""
-    result = gemini_client.models.embed_content(
+    """Embed a single text string using OpenAI text-embedding-3-small."""
+    result = openai_client.embeddings.create(
         model=EMBED_MODEL,
-        contents=text,
-        config={"output_dimensionality": EMBED_DIM},
+        input=text,
+        dimensions=EMBED_DIM,
     )
-    embedding = result.embeddings[0].values
+    embedding = result.data[0].embedding
     if len(embedding) != EMBED_DIM:
         raise ValueError(f"Expected {EMBED_DIM}-dim embedding, got {len(embedding)}")
-    return list(embedding)
+    return embedding
 
 
-def embed_batch(texts: list[str], batch_size: int = 50) -> list[list[float]]:
+def embed_batch(texts: list[str], batch_size: int = 100) -> list[list[float]]:
     """
     Embed a list of texts in batches, returning a list of embedding vectors.
-    Adds a small sleep between calls to respect rate limits.
     """
     embeddings: list[list[float]] = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
         print(f"  Embedding texts {i + 1}–{i + len(batch)} of {len(texts)} ...", flush=True)
-        for text in batch:
-            emb = embed_text(text)
-            embeddings.append(emb)
-            time.sleep(EMBED_DELAY_SECONDS)
+        result = openai_client.embeddings.create(
+            model=EMBED_MODEL,
+            input=batch,
+            dimensions=EMBED_DIM,
+        )
+        for item in result.data:
+            embeddings.append(item.embedding)
     return embeddings
 
 
