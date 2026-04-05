@@ -1684,7 +1684,7 @@
         if (n === current) return;
 
         slides[current].classList.remove("active");
-        slides[current].classList.add(n > current ? "prev" : "");
+        if (n > current) slides[current].classList.add("prev");
 
         // Clean up all non-adjacent slides
         slides.forEach((s, i) => {
