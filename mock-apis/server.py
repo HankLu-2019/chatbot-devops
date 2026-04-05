@@ -26,7 +26,7 @@ app = FastAPI(title="Mock Confluence + Jira API")
 # Seed data helpers
 # ---------------------------------------------------------------------------
 
-_NOW = datetime(2026, 4, 4, 12, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime.now(timezone.utc)
 
 
 def _ts(days_ago: float = 0, hours_ago: float = 0) -> str:

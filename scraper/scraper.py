@@ -169,7 +169,7 @@ def scrape_jira_incremental(
     result = client.search_issues(project, updated_since=since)
     issues = result["issues"]
     for i in issues:
-        i.setdefault("space", space)
+        i["space"] = space
     return issues
 
 
@@ -197,7 +197,7 @@ def scrape_jira_gap(
             m = re.search(r"-(\d+)$", i.get("key", ""))
             num = int(m.group(1)) if m else 0
             if num <= to_id:
-                i.setdefault("space", space)
+                i["space"] = space
                 all_issues.append(i)
         if len(issues) < batch:
             break
@@ -229,7 +229,7 @@ def scrape_jira_backfill(
     )
     issues = result["issues"]
     for i in issues:
-        i.setdefault("space", space)
+        i["space"] = space
 
     if not issues or len(issues) < batch_size:
         next_cursor = None
@@ -255,7 +255,24 @@ def run_once(
     """One full scrape cycle. Returns updated state."""
     settings = config.get("settings", {})
     look_back_hours: int = int(settings.get("look_back_hours", 24))
+    run_interval_hours: int = int(settings.get("run_interval_hours", 6))
     backfill_batch_size: int = int(settings.get("backfill_batch_size", 50))
+
+    # If backfill_total_estimated and backfill_days are both set, compute
+    # batch_size to spread the full backfill evenly across backfill_days.
+    # runs_per_day = 24 / run_interval_hours; computed size overrides explicit setting.
+    backfill_total_estimated = settings.get("backfill_total_estimated")
+    backfill_days = settings.get("backfill_days")
+    if backfill_total_estimated and backfill_days:
+        import math
+        runs_per_day = 24 / run_interval_hours
+        computed = math.ceil(int(backfill_total_estimated) / (int(backfill_days) * runs_per_day))
+        backfill_batch_size = max(computed, 1)
+        log.info(
+            "backfill_batch_size computed from backfill_total_estimated=%s / backfill_days=%s "
+            "(%.1f runs/day) = %d items/run",
+            backfill_total_estimated, backfill_days, runs_per_day, backfill_batch_size,
+        )
 
     now = datetime.now(timezone.utc)
     incremental_since = now - timedelta(hours=look_back_hours)

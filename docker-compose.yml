@@ -92,6 +92,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@paradedb:5432/ragdb
       CONFLUENCE_URL: http://mock-apis:8081
       JIRA_URL: http://mock-apis:8081
+      DATA_DIR: /data
     volumes:
       - ./data:/data
       - ./scraper:/app

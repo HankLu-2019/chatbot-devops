@@ -23,8 +23,11 @@ teams:
 settings:
   look_back_hours: 24 # incremental window
   run_interval_hours: 6 # sleep between runs
-  backfill_batch_size: 50 # items per backfill batch per run
-  backfill_days: 7 # spread backfill over N days
+  backfill_batch_size: 50 # items per backfill batch per run (overridden if backfill_total_estimated is set)
+  backfill_days: 7 # spread backfill over this many days (used with backfill_total_estimated)
+  # backfill_total_estimated: 40000  # uncomment to auto-compute batch_size from backfill_days
+  #   Formula: batch_size = ceil(backfill_total_estimated / (backfill_days * 24/run_interval_hours))
+  #   Example: 40000 / (7 * 4) = 1429 items/run
   request_delay_seconds: 0.5 # delay between paginated requests
   max_retries: 3
   retry_delay_seconds: 2.0

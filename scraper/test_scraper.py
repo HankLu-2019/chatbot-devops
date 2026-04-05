@@ -27,7 +27,10 @@ from jira_client import JiraClient
 from scraper import (
     cleanup_orphaned_tmp,
     dump_json,
+    run_once,
     scrape_confluence_incremental,
+    scrape_jira_backfill,
+    scrape_jira_gap,
     scrape_jira_incremental,
 )
 
@@ -459,6 +462,109 @@ class TestJiraClient(unittest.TestCase):
 
 
 # ===========================================================================
+# run_once() integration tests — space tagging, gap detection, backfill
+# ===========================================================================
+
+class TestRunOnceIntegration(unittest.TestCase):
+    """Integration tests for run_once() using fully mocked clients."""
+
+    def _minimal_config(self) -> dict:
+        return {
+            "teams": [{"name": "CI/CD", "space": "CI-CD",
+                        "confluence": {"parent_ids": [10001]},
+                        "jira": {"projects": ["CICD"]}}],
+            "settings": {"look_back_hours": 24, "backfill_batch_size": 5,
+                         "run_interval_hours": 6},
+        }
+
+    def test_jira_space_overrides_client_project_key(self):
+        """run_once() must tag Jira issues with the team space (CI-CD), not the project key (CICD)."""
+        config = self._minimal_config()
+        state = {"confluence": {}, "jira": {}}
+
+        mock_issue = {
+            "key": "CICD-1", "space": "CICD",  # client sets project key
+            "summary": "test", "description": "", "status": "Done",
+            "url": "", "updated_at": None, "comments": [],
+        }
+        conf_client = MagicMock()
+        conf_client.get_pages_by_parent.return_value = []
+        conf_client.get.return_value = {"results": [], "size": 0}
+        jira_client = MagicMock()
+        jira_client.search_issues.return_value = {"issues": [mock_issue], "total": 1}
+        jira_client.get_latest_issue_number.return_value = 1
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_once(config, state, conf_client, jira_client, tmpdir)
+            jira_files = list(Path(tmpdir).rglob("jira_*.json"))
+            self.assertEqual(len(jira_files), 1)
+            issues = json.loads(jira_files[0].read_text())
+            for issue in issues:
+                self.assertEqual(issue["space"], "CI-CD",
+                                 f"Expected space='CI-CD', got '{issue['space']}'")
+
+    def test_gap_detection_triggers_gap_fetch(self):
+        """run_once() fetches gap issues when latest_num > known state max."""
+        config = self._minimal_config()
+        # State says we've seen up to CICD-5; mock says latest is CICD-8 → gap
+        state = {"confluence": {}, "jira": {"CICD": {
+            "last_fetched": "2026-01-01T00:00:00Z",
+            "max_issue_number": 5,
+            "backfill_cursor": None,
+        }}}
+
+        conf_client = MagicMock()
+        conf_client.get_pages_by_parent.return_value = []
+        conf_client.get.return_value = {"results": [], "size": 0}
+        jira_client = MagicMock()
+        jira_client.search_issues.return_value = {"issues": [], "total": 0}
+        jira_client.get_latest_issue_number.return_value = 8  # gap of 3
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_once(config, state, conf_client, jira_client, tmpdir)
+
+        # search_issues should have been called for gap (min_issue_number=5)
+        calls = jira_client.search_issues.call_args_list
+        gap_calls = [c for c in calls if c.kwargs.get("min_issue_number") == 5
+                     or (c.args and len(c.args) > 1 and c.args[1] == 5)]
+        self.assertTrue(len(gap_calls) > 0 or any(
+            call[1].get("min_issue_number") == 5 or
+            (len(call[0]) > 1 and call[0][1] == 5)
+            for call in [c for c in calls]
+        ), "Expected a gap fetch call with min_issue_number=5")
+
+    def test_backfill_runs_on_first_call_for_new_source(self):
+        """run_once() runs backfill when a Jira project is new (not in state)."""
+        config = self._minimal_config()
+        state = {"confluence": {}, "jira": {}}  # CICD never seen before
+
+        conf_client = MagicMock()
+        conf_client.get_pages_by_parent.return_value = []
+        conf_client.get.return_value = {"results": [], "size": 0}
+
+        backfill_issue = {
+            "key": "CICD-1", "space": "CICD",
+            "summary": "Backfill issue", "description": "", "status": "Done",
+            "url": "", "updated_at": None, "comments": [],
+        }
+        jira_client = MagicMock()
+        # Incremental returns nothing; backfill call returns one issue
+        jira_client.search_issues.side_effect = [
+            {"issues": [], "total": 0},   # incremental
+            {"issues": [backfill_issue], "total": 1},  # backfill
+        ]
+        jira_client.get_latest_issue_number.return_value = 1
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            new_state = run_once(config, state, conf_client, jira_client, tmpdir)
+
+        # State should track the project now
+        self.assertIn("CICD", new_state.get("jira", {}))
+        # search_issues called at least twice (incremental + backfill)
+        self.assertGreaterEqual(jira_client.search_issues.call_count, 2)
+
+
+# ===========================================================================
 # Standalone test runner
 # ===========================================================================
 
@@ -473,6 +579,7 @@ def run_tests() -> bool:
         TestBaseClient,
         TestConfluenceClient,
         TestJiraClient,
+        TestRunOnceIntegration,
     ]
     for cls in test_classes:
         suite.addTests(loader.loadTestsFromTestCase(cls))
